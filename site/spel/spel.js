@@ -102,7 +102,7 @@ function skapaMonster() {
   for (const typ of typer) {
     if (!platser.length) break;
     const p = platser.splice(Math.floor(Math.random() * platser.length), 1)[0];
-    monster.push({ typ, x: p.x, y: p.y, dx: 0, dy: 0, tempo: slumpTempo(typ), raknare: 0, arg: 0 });
+    monster.push({ typ, x: p.x, y: p.y, dx: 0, dy: 0, tempo: slumpTempo(typ), raknare: 0, arg: 0, vila: 0 });
   }
 }
 
@@ -346,11 +346,18 @@ function rita() {
   if (!klart && !forlorat) {
     for (const m of monster) {
       if (m.typ === "jagare") {
-        if (harSiktlinje(m)) m.arg = 120;
-        else if (m.arg > 0) m.arg--;
+        // Blir arg 1,5 s vid siktlinje och vilar sedan 1,5 s så man hinner undan.
+        if (m.arg > 0) {
+          m.arg--;
+          if (m.arg === 0) m.vila = 90;
+        } else if (m.vila > 0) {
+          m.vila--;
+        } else if (harSiktlinje(m)) {
+          m.arg = 90;
+        }
       }
       m.raknare++;
-      if (m.raknare >= (m.arg > 0 ? 5 : m.tempo)) {
+      if (m.raknare >= (m.arg > 0 ? 11 : m.tempo)) {
         m.raknare = 0;
         flyttaMonster(m);
         kollaMonster();
