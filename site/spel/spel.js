@@ -22,6 +22,10 @@ let klart = false;
 let forlorat = false;
 let orsak = "";
 let allaKlara = false;
+let fynd = [];
+let poang = 0;
+let poangNiva = 0;
+let stjarnor = 0;
 
 // Skapar en labyrint (rekursiv backtracking); 1 = vägg, 0 = gång.
 function skapaLabyrint(n, m) {
@@ -68,7 +72,62 @@ function startaNiva() {
   mal = { x: kolumner - 2, y: rader - 2 };
   klart = false;
   forlorat = false;
+  poang = poangNiva;
+  stjarnor = 0;
   skapaMonster();
+  skapaFynd();
+}
+
+// Slumpar ut pengar och 3 stjärnor på gångar utanför start och mål.
+function skapaFynd() {
+  const platser = [];
+  for (let y = 1; y < rader - 1; y++) {
+    for (let x = 1; x < kolumner - 1; x++) {
+      const franStart = Math.abs(x - 1) + Math.abs(y - 1);
+      if (karta[y][x] === 0 && franStart > 3 && !(x === mal.x && y === mal.y)) platser.push({ x, y });
+    }
+  }
+  const typer = [...Array(3).fill("stjarna"), ...Array(6 + niva).fill("pengar")];
+  fynd = [];
+  for (const typ of typer) {
+    if (!platser.length) break;
+    const p = platser.splice(Math.floor(Math.random() * platser.length), 1)[0];
+    fynd.push({ typ, x: p.x, y: p.y });
+  }
+}
+
+function plockaUpp() {
+  fynd = fynd.filter((f) => {
+    if (f.x !== spelare.x || f.y !== spelare.y) return true;
+    if (f.typ === "stjarna") {
+      stjarnor++;
+      poang += 5;
+    } else {
+      poang++;
+    }
+    return false;
+  });
+}
+
+function ritaFynd(f) {
+  const cx = offsetX + (f.x + 0.5) * ruta;
+  const cy = offsetY + (f.y + 0.5) * ruta;
+  ctx.shadowColor = "#ffd23a";
+  ctx.shadowBlur = 6;
+  ctx.fillStyle = f.typ === "stjarna" ? "#fff27a" : "#f5b800";
+  ctx.beginPath();
+  if (f.typ === "stjarna") {
+    for (let i = 0; i < 10; i++) {
+      const r = ruta * (i % 2 === 0 ? 0.4 : 0.17);
+      const v = -Math.PI / 2 + (i * Math.PI) / 5;
+      ctx.lineTo(cx + r * Math.cos(v), cy + r * Math.sin(v));
+    }
+    ctx.closePath();
+  } else {
+    ctx.arc(cx, cy, ruta * 0.22, 0, Math.PI * 2);
+  }
+  ctx.fill();
+  ctx.shadowBlur = 0;
 }
 
 // tempo = antal bilder mellan varje steg, så lägre tal är snabbare.
@@ -208,6 +267,7 @@ function flytta(dx, dy) {
   }
   spelare.x = nx;
   spelare.y = ny;
+  plockaUpp();
   kollaMonster();
   if (forlorat) return;
   if (nx === mal.x && ny === mal.y) {
@@ -231,10 +291,12 @@ document.addEventListener("keydown", (e) => {
     if (forlorat) {
       startaNiva();
     } else if (allaKlara) {
+      poangNiva = 0;
       niva = 0;
       allaKlara = false;
       startaNiva();
     } else if (klart) {
+      poangNiva = poang;
       niva++;
       startaNiva();
     }
@@ -250,6 +312,9 @@ function rita() {
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
   ctx.fillText(`Nivå ${niva + 1} av ${ANTAL_NIVAER}`, 10, 19);
+  ctx.textAlign = "right";
+  ctx.fillText(`Poäng: ${poang}   Stjärnor: ${stjarnor}/3`, canvas.width - 10, 19);
+  ctx.textAlign = "left";
 
   // Skakar lite när man förlorar.
   const skak = traffTimer > 0 ? (Math.random() - 0.5) * 6 : 0;
@@ -295,6 +360,7 @@ function rita() {
   ctx.fillRect(offsetX + mal.x * ruta, offsetY + mal.y * ruta, ruta, ruta);
 
   ctx.shadowBlur = 0;
+  fynd.forEach(ritaFynd);
   ctx.fillStyle = SPELARE;
   ctx.strokeStyle = "#fff";
   ctx.lineWidth = 2;
