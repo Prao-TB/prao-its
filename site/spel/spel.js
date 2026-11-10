@@ -191,7 +191,7 @@ function flytta(dx, dy) {
   const ny = spelare.y + dy;
   if (karta[ny][nx] === 1) {
     forlorat = true;
-    orsak = "Väggarna är farliga!";
+    orsak = "Lavan är farlig!";
     traffTimer = 12;
     return;
   }
@@ -201,14 +201,7 @@ function flytta(dx, dy) {
   if (forlorat) return;
   if (nx === mal.x && ny === mal.y) {
     klart = true;
-    if (niva + 1 >= ANTAL_NIVAER) {
-      allaKlara = true;
-    } else {
-      setTimeout(() => {
-        niva++;
-        startaNiva();
-      }, 900);
-    }
+    if (niva + 1 >= ANTAL_NIVAER) allaKlara = true;
   }
 }
 
@@ -222,12 +215,18 @@ document.addEventListener("keydown", (e) => {
   if (riktningar[e.key]) {
     e.preventDefault();
     flytta(...riktningar[e.key]);
-  } else if (e.key === "Enter" && forlorat) {
-    startaNiva();
-  } else if (e.key === "Enter" && allaKlara) {
-    niva = 0;
-    allaKlara = false;
-    startaNiva();
+  } else if (e.key === " ") {
+    e.preventDefault();
+    if (forlorat) {
+      startaNiva();
+    } else if (allaKlara) {
+      niva = 0;
+      allaKlara = false;
+      startaNiva();
+    } else if (klart) {
+      niva++;
+      startaNiva();
+    }
   }
 });
 
@@ -311,7 +310,7 @@ function rita() {
     ctx.textAlign = "center";
     ctx.fillText("Du förlorade! " + orsak, canvas.width / 2, canvas.height / 2);
     ctx.font = "16px system-ui, sans-serif";
-    ctx.fillText("Tryck Enter för att försöka igen", canvas.width / 2, canvas.height / 2 + 30);
+    ctx.fillText("Tryck mellanslag för att försöka igen", canvas.width / 2, canvas.height / 2 + 30);
   }
 
   if (klart) {
@@ -325,10 +324,12 @@ function rita() {
       canvas.width / 2,
       canvas.height / 2
     );
-    if (allaKlara) {
-      ctx.font = "16px system-ui, sans-serif";
-      ctx.fillText("Tryck Enter för att spela igen", canvas.width / 2, canvas.height / 2 + 30);
-    }
+    ctx.font = "16px system-ui, sans-serif";
+    ctx.fillText(
+      allaKlara ? "Tryck mellanslag för att spela igen" : "Tryck mellanslag för nästa nivå",
+      canvas.width / 2,
+      canvas.height / 2 + 30
+    );
   }
 
   if (!klart && !forlorat) {
