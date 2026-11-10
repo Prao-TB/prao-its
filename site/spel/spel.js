@@ -75,7 +75,7 @@ function startaNiva() {
 const MONSTERTYPER = {
   vandrare: { farg: LILA, tempo: () => Math.max(22, 38 - 3 * niva) },
   springare: { farg: "#ff4dcb", tempo: () => Math.max(12, 18 - niva) },
-  jagare: { farg: "#e6e6e6", tempo: () => Math.max(26, 46 - 3 * niva) },
+  jagare: { farg: "#e6e6e6", tempo: () => Math.max(30, 50 - 2 * niva) },
 };
 
 const TYPLISTA = ["vandrare", "springare", "jagare"];
@@ -102,18 +102,18 @@ function skapaMonster() {
   for (const typ of typer) {
     if (!platser.length) break;
     const p = platser.splice(Math.floor(Math.random() * platser.length), 1)[0];
-    monster.push({ typ, x: p.x, y: p.y, dx: 0, dy: 0, tempo: slumpTempo(typ), raknare: 0 });
+    monster.push({ typ, x: p.x, y: p.y, dx: 0, dy: 0, tempo: slumpTempo(typ), raknare: 0, arg: 0 });
   }
 }
 
-// Avstånd i steg från spelaren, högst 10 steg bort.
-function avstandFranSpelare() {
+// Avstånd i steg från spelaren, högst maxSteg steg bort.
+function avstandFranSpelare(maxSteg) {
   const avstand = new Map([[spelare.y * kolumner + spelare.x, 0]]);
   const ko = [[spelare.x, spelare.y]];
   for (let i = 0; i < ko.length; i++) {
     const [x, y] = ko[i];
     const d = avstand.get(y * kolumner + x);
-    if (d >= 10) continue;
+    if (d >= maxSteg) continue;
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nyckel = (y + dy) * kolumner + (x + dx);
       if (karta[y + dy][x + dx] === 0 && !avstand.has(nyckel)) {
@@ -125,12 +125,23 @@ function avstandFranSpelare() {
   return avstand;
 }
 
+// Rak siktlinje längs rad eller kolumn utan väggar emellan.
+function harSiktlinje(m) {
+  if (m.x !== spelare.x && m.y !== spelare.y) return false;
+  const sx = Math.sign(spelare.x - m.x);
+  const sy = Math.sign(spelare.y - m.y);
+  for (let x = m.x + sx, y = m.y + sy; x !== spelare.x || y !== spelare.y; x += sx, y += sy) {
+    if (karta[y][x] === 1) return false;
+  }
+  return true;
+}
+
 function flyttaMonster(m) {
   const val = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => karta[m.y + dy][m.x + dx] === 0);
   let lista = val;
 
-  if (m.typ === "jagare") {
-    const avstand = avstandFranSpelare();
+  if (m.typ === "jagare" && m.arg > 0) {
+    const avstand = avstandFranSpelare(60);
     const nu = avstand.get(m.y * kolumner + m.x);
     const narmare = val.filter(([dx, dy]) => avstand.get((m.y + dy) * kolumner + (m.x + dx)) < nu);
     if (nu !== undefined && narmare.length) lista = narmare;
@@ -151,7 +162,7 @@ function flyttaMonster(m) {
 function ritaMonster(m) {
   const cx = offsetX + (m.x + 0.5) * ruta;
   const cy = offsetY + (m.y + 0.5) * ruta;
-  const farg = MONSTERTYPER[m.typ].farg;
+  const farg = m.arg > 0 ? RODA : MONSTERTYPER[m.typ].farg;
   ctx.shadowColor = farg;
   ctx.shadowBlur = 10;
   ctx.fillStyle = farg;
@@ -334,8 +345,12 @@ function rita() {
 
   if (!klart && !forlorat) {
     for (const m of monster) {
+      if (m.typ === "jagare") {
+        if (harSiktlinje(m)) m.arg = 120;
+        else if (m.arg > 0) m.arg--;
+      }
       m.raknare++;
-      if (m.raknare >= m.tempo) {
+      if (m.raknare >= (m.arg > 0 ? 5 : m.tempo)) {
         m.raknare = 0;
         flyttaMonster(m);
         kollaMonster();
