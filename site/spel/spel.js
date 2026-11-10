@@ -1,10 +1,10 @@
 const canvas = document.getElementById("spelplan");
 const ctx = canvas.getContext("2d");
 
-const ANTAL_NIVAER = 5;
+const ANTAL_NIVAER = 10;
 const TOPPFALT = 28;
 const RODA = "#ff2a2a";
-const GRON = "#2aff6a";
+const GRON = "#2f9e44";
 const LILA = "#c04dff";
 const LAVA = "#ff5a00";
 const LAVA_LJUS = "#ffd23a";
@@ -17,7 +17,6 @@ let niva = 0;
 let karta, kolumner, rader, ruta, offsetX, offsetY;
 let spelare, mal;
 let monster = [];
-let monsterRaknare = 0;
 let traffTimer = 0;
 let klart = false;
 let forlorat = false;
@@ -57,8 +56,8 @@ function skapaLabyrint(n, m) {
 }
 
 function startaNiva() {
-  const n = 5 + 2 * niva;
-  const m = 3 + niva;
+  const n = 8 + 2 * niva;
+  const m = 5 + niva;
   karta = skapaLabyrint(n, m);
   kolumner = 2 * n + 1;
   rader = 2 * m + 1;
@@ -69,12 +68,28 @@ function startaNiva() {
   mal = { x: kolumner - 2, y: rader - 2 };
   klart = false;
   forlorat = false;
-  monsterRaknare = 0;
-  skapaMonster(niva + 1);
+  skapaMonster();
+}
+
+// tempo = antal bilder mellan varje steg, så lägre tal är snabbare.
+const MONSTERTYPER = {
+  vandrare: { farg: LILA, tempo: () => Math.max(22, 38 - 3 * niva) },
+  springare: { farg: "#ff4dcb", tempo: () => Math.max(12, 18 - niva) },
+  jagare: { farg: "#e6e6e6", tempo: () => Math.max(26, 46 - 3 * niva) },
+};
+
+const TYPLISTA = ["vandrare", "springare", "jagare"];
+
+// Varje monster får en egen hastighet: 0.7 = 30 % snabbare, 1.4 = 40 % långsammare.
+function slumpTempo(typ) {
+  const faktor = 0.7 + Math.random() * 0.7;
+  return Math.max(5, Math.round(MONSTERTYPER[typ].tempo() * faktor));
 }
 
 // Placerar monster på slumpade gångar en bit från start och mål.
-function skapaMonster(antal) {
+function skapaMonster() {
+  const antal = 3 + niva;
+  const typer = Array.from({ length: antal }, (_, i) => TYPLISTA[i % TYPLISTA.length]);
   const platser = [];
   for (let y = 1; y < rader - 1; y++) {
     for (let x = 1; x < kolumner - 1; x++) {
@@ -84,24 +99,82 @@ function skapaMonster(antal) {
     }
   }
   monster = [];
-  for (let i = 0; i < antal && platser.length; i++) {
+  for (const typ of typer) {
+    if (!platser.length) break;
     const p = platser.splice(Math.floor(Math.random() * platser.length), 1)[0];
-    monster.push({ x: p.x, y: p.y, dx: 0, dy: 0 });
+    monster.push({ typ, x: p.x, y: p.y, dx: 0, dy: 0, tempo: slumpTempo(typ), raknare: 0 });
   }
 }
 
-function flyttaMonster() {
-  for (const m of monster) {
-    const val = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => karta[m.y + dy][m.x + dx] === 0);
+// Avstånd i steg från spelaren, högst 10 steg bort.
+function avstandFranSpelare() {
+  const avstand = new Map([[spelare.y * kolumner + spelare.x, 0]]);
+  const ko = [[spelare.x, spelare.y]];
+  for (let i = 0; i < ko.length; i++) {
+    const [x, y] = ko[i];
+    const d = avstand.get(y * kolumner + x);
+    if (d >= 10) continue;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nyckel = (y + dy) * kolumner + (x + dx);
+      if (karta[y + dy][x + dx] === 0 && !avstand.has(nyckel)) {
+        avstand.set(nyckel, d + 1);
+        ko.push([x + dx, y + dy]);
+      }
+    }
+  }
+  return avstand;
+}
+
+function flyttaMonster(m) {
+  const val = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => karta[m.y + dy][m.x + dx] === 0);
+  let lista = val;
+
+  if (m.typ === "jagare") {
+    const avstand = avstandFranSpelare();
+    const nu = avstand.get(m.y * kolumner + m.x);
+    const narmare = val.filter(([dx, dy]) => avstand.get((m.y + dy) * kolumner + (m.x + dx)) < nu);
+    if (nu !== undefined && narmare.length) lista = narmare;
+  }
+  if (lista === val) {
     // Vänder bara i en återvändsgränd.
     const framat = val.filter(([dx, dy]) => !(dx === -m.dx && dy === -m.dy));
-    const lista = framat.length ? framat : val;
-    const [dx, dy] = lista[Math.floor(Math.random() * lista.length)];
-    m.x += dx;
-    m.y += dy;
-    m.dx = dx;
-    m.dy = dy;
+    if (framat.length) lista = framat;
   }
+
+  const [dx, dy] = lista[Math.floor(Math.random() * lista.length)];
+  m.x += dx;
+  m.y += dy;
+  m.dx = dx;
+  m.dy = dy;
+}
+
+function ritaMonster(m) {
+  const cx = offsetX + (m.x + 0.5) * ruta;
+  const cy = offsetY + (m.y + 0.5) * ruta;
+  const farg = MONSTERTYPER[m.typ].farg;
+  ctx.shadowColor = farg;
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = farg;
+  ctx.beginPath();
+  if (m.typ === "vandrare") {
+    ctx.arc(cx, cy, ruta * 0.4, 0, Math.PI * 2);
+  } else if (m.typ === "springare") {
+    const r = ruta * 0.42;
+    ctx.moveTo(cx, cy - r);
+    ctx.lineTo(cx + r, cy);
+    ctx.lineTo(cx, cy + r);
+    ctx.lineTo(cx - r, cy);
+    ctx.closePath();
+  } else {
+    ctx.rect(cx - ruta * 0.38, cy - ruta * 0.38, ruta * 0.76, ruta * 0.76);
+  }
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = m.typ === "jagare" ? RODA : "#fff";
+  ctx.beginPath();
+  ctx.arc(cx - ruta * 0.15, cy - ruta * 0.08, ruta * 0.1, 0, Math.PI * 2);
+  ctx.arc(cx + ruta * 0.15, cy - ruta * 0.08, ruta * 0.1, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function kollaMonster() {
@@ -206,7 +279,7 @@ function rita() {
   ctx.globalAlpha = 1;
 
   ctx.shadowColor = GRON;
-  ctx.shadowBlur = 10;
+  ctx.shadowBlur = 3;
   ctx.fillStyle = GRON;
   ctx.fillRect(offsetX + ruta, offsetY + ruta, ruta, ruta);
   ctx.fillRect(offsetX + mal.x * ruta, offsetY + mal.y * ruta, ruta, ruta);
@@ -226,22 +299,7 @@ function rita() {
   ctx.fill();
   ctx.stroke();
 
-  for (const m of monster) {
-    const cx = offsetX + (m.x + 0.5) * ruta;
-    const cy = offsetY + (m.y + 0.5) * ruta;
-    ctx.shadowColor = LILA;
-    ctx.shadowBlur = 10;
-    ctx.fillStyle = LILA;
-    ctx.beginPath();
-    ctx.arc(cx, cy, ruta * 0.4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = "#fff";
-    ctx.beginPath();
-    ctx.arc(cx - ruta * 0.15, cy - ruta * 0.08, ruta * 0.1, 0, Math.PI * 2);
-    ctx.arc(cx + ruta * 0.15, cy - ruta * 0.08, ruta * 0.1, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  monster.forEach(ritaMonster);
 
   ctx.restore();
 
@@ -274,11 +332,13 @@ function rita() {
   }
 
   if (!klart && !forlorat) {
-    monsterRaknare++;
-    if (monsterRaknare >= Math.max(10, 30 - 4 * niva)) {
-      monsterRaknare = 0;
-      flyttaMonster();
-      kollaMonster();
+    for (const m of monster) {
+      m.raknare++;
+      if (m.raknare >= m.tempo) {
+        m.raknare = 0;
+        flyttaMonster(m);
+        kollaMonster();
+      }
     }
   }
 
