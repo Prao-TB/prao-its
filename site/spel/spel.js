@@ -6,6 +6,12 @@ const TOPPFALT = 28;
 const RODA = "#ff2a2a";
 const GRON = "#2aff6a";
 const LILA = "#c04dff";
+const LAVA = "#ff5a00";
+const LAVA_LJUS = "#ffd23a";
+const SPELARE = "#2ad4ff";
+
+// Andel av de borttagbara väggarna som öppnas för att ge fler vägar till målet.
+const EXTRA_VAGAR = 0.2;
 
 let niva = 0;
 let karta, kolumner, rader, ruta, offsetX, offsetY;
@@ -38,6 +44,14 @@ function skapaLabyrint(n, m) {
     rutnat[y + hy][x + hx] = 0;
     rutnat[ny][nx] = 0;
     stack.push([nx, ny]);
+  }
+
+  // Öppnar slumpade väggar mellan två gångar så att det finns flera vägar.
+  for (let y = 1; y < r - 1; y++) {
+    for (let x = 1; x < k - 1; x++) {
+      const mellanVagg = (x % 2 === 0) !== (y % 2 === 0);
+      if (rutnat[y][x] === 1 && mellanVagg && Math.random() < EXTRA_VAGAR) rutnat[y][x] = 0;
+    }
   }
   return rutnat;
 }
@@ -159,9 +173,11 @@ function rita() {
   ctx.save();
   ctx.translate(skak, skak);
 
-  ctx.shadowColor = RODA;
+  // Lava: orange botten med gula fläckar som pulserar.
+  const tid = performance.now() / 300;
+  ctx.shadowColor = LAVA;
   ctx.shadowBlur = traffTimer > 0 ? 18 : 8;
-  ctx.fillStyle = traffTimer > 0 ? "#ff8080" : RODA;
+  ctx.fillStyle = traffTimer > 0 ? "#ffb070" : LAVA;
   for (let y = 0; y < rader; y++) {
     for (let x = 0; x < kolumner; x++) {
       if (karta[y][x] === 1) {
@@ -169,6 +185,25 @@ function rita() {
       }
     }
   }
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = LAVA_LJUS;
+  for (let y = 0; y < rader; y++) {
+    for (let x = 0; x < kolumner; x++) {
+      if (karta[y][x] === 1) {
+        ctx.globalAlpha = 0.25 + 0.25 * Math.sin(tid + x * 1.7 + y * 2.3);
+        ctx.beginPath();
+        ctx.arc(
+          offsetX + (x + 0.5) * ruta,
+          offsetY + (y + 0.5) * ruta,
+          ruta * 0.3,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
 
   ctx.shadowColor = GRON;
   ctx.shadowBlur = 10;
@@ -177,7 +212,7 @@ function rita() {
   ctx.fillRect(offsetX + mal.x * ruta, offsetY + mal.y * ruta, ruta, ruta);
 
   ctx.shadowBlur = 0;
-  ctx.fillStyle = RODA;
+  ctx.fillStyle = SPELARE;
   ctx.strokeStyle = "#fff";
   ctx.lineWidth = 2;
   ctx.beginPath();
