@@ -6,8 +6,8 @@ const TOPPFALT = 28;
 const RODA = "#ff2a2a";
 const GRON = "#2f9e44";
 const LILA = "#c04dff";
-const LAVA = "#ff5a00";
-const LAVA_LJUS = "#ffd23a";
+const LAVA = "#c8300a";
+const LAVA_LJUS = "#ff8a1c";
 const SPELARE = "#2ad4ff";
 
 // Andel av de borttagbara väggarna som öppnas för att ge fler vägar till målet.
@@ -218,6 +218,17 @@ function flyttaMonster(m) {
   m.dy = dy;
 }
 
+// Ljus uppe till vänster och skugga nere till höger på den senaste formen.
+function skuggaForm(cx, cy, r) {
+  const g = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.1, cx, cy, r * 1.2);
+  g.addColorStop(0, "rgba(255,255,255,0.5)");
+  g.addColorStop(0.5, "rgba(255,255,255,0)");
+  g.addColorStop(1, "rgba(0,0,0,0.5)");
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = g;
+  ctx.fill();
+}
+
 function ritaMonster(m) {
   const cx = offsetX + (m.x + 0.5) * ruta;
   const cy = offsetY + (m.y + 0.5) * ruta;
@@ -239,12 +250,20 @@ function ritaMonster(m) {
     ctx.rect(cx - ruta * 0.38, cy - ruta * 0.38, ruta * 0.76, ruta * 0.76);
   }
   ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = m.typ === "jagare" ? RODA : "#fff";
-  ctx.beginPath();
-  ctx.arc(cx - ruta * 0.15, cy - ruta * 0.08, ruta * 0.1, 0, Math.PI * 2);
-  ctx.arc(cx + ruta * 0.15, cy - ruta * 0.08, ruta * 0.1, 0, Math.PI * 2);
-  ctx.fill();
+  skuggaForm(cx, cy, ruta * 0.42);
+  const arg = m.arg > 0 || m.typ === "jagare";
+  for (const sida of [-1, 1]) {
+    const ex = cx + sida * ruta * 0.15;
+    const ey = cy - ruta * 0.08;
+    ctx.fillStyle = arg ? RODA : "#f2f2f2";
+    ctx.beginPath();
+    ctx.ellipse(ex, ey, ruta * 0.1, ruta * 0.12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#111";
+    ctx.beginPath();
+    ctx.arc(ex + m.dx * ruta * 0.04, ey + m.dy * ruta * 0.04, ruta * 0.05, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 function kollaMonster() {
@@ -362,8 +381,8 @@ function rita() {
   ctx.shadowBlur = 0;
   fynd.forEach(ritaFynd);
   ctx.fillStyle = SPELARE;
-  ctx.strokeStyle = "#fff";
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(255,255,255,0.6)";
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.arc(
     offsetX + (spelare.x + 0.5) * ruta,
@@ -373,6 +392,7 @@ function rita() {
     Math.PI * 2
   );
   ctx.fill();
+  skuggaForm(offsetX + (spelare.x + 0.5) * ruta, offsetY + (spelare.y + 0.5) * ruta, ruta * 0.32);
   ctx.stroke();
 
   monster.forEach(ritaMonster);
