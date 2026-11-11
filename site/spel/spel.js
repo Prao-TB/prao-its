@@ -425,6 +425,14 @@ function flytta(dx, dy) {
   }
 }
 
+function startaValdNiva() {
+  niva = valdNiva;
+  poangNiva = framsteg.poang;
+  allaKlara = false;
+  startaNiva();
+  skarm = "spel";
+}
+
 document.addEventListener("keydown", (e) => {
   const riktningar = {
     ArrowUp: [0, -1],
@@ -453,13 +461,7 @@ document.addEventListener("keydown", (e) => {
       valdNiva = framsteg.upplast - 1;
       skarm = "val";
     } else if (skarm === "val") {
-      if (valdNiva < framsteg.upplast) {
-        niva = valdNiva;
-        poangNiva = framsteg.poang;
-        allaKlara = false;
-        startaNiva();
-        skarm = "spel";
-      }
+      if (valdNiva < framsteg.upplast) startaValdNiva();
     } else if (forlorat) {
       startaNiva();
     } else if (allaKlara) {
@@ -472,6 +474,45 @@ document.addEventListener("keydown", (e) => {
       startaNiva();
     }
   }
+});
+
+const NIVARUTA = { bredd: 82, hojd: 40, mellan: 6, topp: 64 };
+
+function nivaPlats(i) {
+  const { bredd, hojd, mellan, topp } = NIVARUTA;
+  const startX = (canvas.width - (10 * bredd + 9 * mellan)) / 2;
+  return { x: startX + (i % 10) * (bredd + mellan), y: topp + Math.floor(i / 10) * (hojd + mellan) };
+}
+
+// Vilken nivåruta musen är ovanför, eller -1. Canvas kan vara skalad av CSS.
+function nivaUnderMus(e) {
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
+  const my = (e.clientY - rect.top) * (canvas.height / rect.height);
+  for (let i = 0; i < ANTAL_NIVAER; i++) {
+    const { x, y } = nivaPlats(i);
+    if (mx >= x && mx <= x + NIVARUTA.bredd && my >= y && my <= y + NIVARUTA.hojd) return i;
+  }
+  return -1;
+}
+
+canvas.addEventListener("mousemove", (e) => {
+  const i = skarm === "val" ? nivaUnderMus(e) : -1;
+  if (i >= 0) valdNiva = i;
+  canvas.style.cursor = i >= 0 && i < framsteg.upplast ? "pointer" : "default";
+});
+
+canvas.addEventListener("click", (e) => {
+  if (skarm === "start") {
+    valdNiva = framsteg.upplast - 1;
+    skarm = "val";
+    return;
+  }
+  if (skarm !== "val") return;
+  const i = nivaUnderMus(e);
+  if (i < 0) return;
+  valdNiva = i;
+  if (i < framsteg.upplast) startaValdNiva();
 });
 
 // Bestämt "slump" 0–1 per ruta så att mönstret inte fladdrar mellan bilderna.
@@ -644,7 +685,7 @@ function ritaNivaval() {
   ctx.fillStyle = "#888";
   ctx.font = "14px system-ui, sans-serif";
   ctx.textAlign = "left";
-  ctx.fillText("Pilar: välj   Mellanslag: spela   Esc: tillbaka", 250, 38);
+  ctx.fillText("Klicka eller pilar + mellanslag   Esc: tillbaka", 250, 38);
 
   const totalt = framsteg.stjarnor.reduce((summa, s) => summa + s, 0);
   ctx.fillStyle = "#ffd23a";
@@ -652,13 +693,9 @@ function ritaNivaval() {
   ctx.textAlign = "right";
   ctx.fillText(`Rekord: ${framsteg.rekord}   Stjärnor: ${totalt}/${ANTAL_NIVAER * 3}`, w - 40, 38);
 
-  const bredd = 82;
-  const hojd = 40;
-  const mellan = 6;
-  const startX = (w - (10 * bredd + 9 * mellan)) / 2;
+  const { bredd, hojd } = NIVARUTA;
   for (let i = 0; i < ANTAL_NIVAER; i++) {
-    const x = startX + (i % 10) * (bredd + mellan);
-    const y = 64 + Math.floor(i / 10) * (hojd + mellan);
+    const { x, y } = nivaPlats(i);
     const last = i >= framsteg.upplast;
     const klarad = i < framsteg.upplast - 1;
 
