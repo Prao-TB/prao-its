@@ -6,6 +6,12 @@ const ANTAL_NIVAER = 100;
 const MAX_STORLEKSNIVA = 9;
 const NYA_MONSTER_FRAN = 15;
 const ANTAL_BROAR = 3;
+
+// Mynt (1 poäng) och 3 stjärnor (5 poäng vardera) per nivå, samma antal som skapaFynd lägger ut.
+// Ett mynt till per nivå fram till nivå 10, därefter ett till var annan nivå.
+const antalMynt = (i) => 6 + Math.min(i, MAX_STORLEKSNIVA) + Math.floor(Math.max(0, i - MAX_STORLEKSNIVA) / 2);
+const maxPoangNiva = (i) => antalMynt(i) + 15;
+const MAXPOANG = Array.from({ length: ANTAL_NIVAER }, (_, i) => maxPoangNiva(i)).reduce((summa, p) => summa + p, 0);
 const TOPPFALT = 28;
 const RODA = "#ff2a2a";
 const GRON = "#2f9e44";
@@ -36,24 +42,28 @@ let skott = [];
 let skarm = "start"; // "start", "val" eller "spel"
 let valdNiva = 0;
 
-// upplast = antal nivåer som är öppna, stjarnor = bäst antal stjärnor per nivå, poang = sparad poäng.
+// upplast = antal nivåer som är öppna, stjarnor = bäst antal stjärnor per nivå, nivaPoang = poäng från senast klarade försöket per nivå.
 const SPARNYCKEL = "flykten-framsteg";
 let framsteg = laddaFramsteg();
 
 function laddaFramsteg() {
-  const f = { upplast: 1, stjarnor: Array(ANTAL_NIVAER).fill(0), poang: 0, rekord: 0 };
+  const f = { upplast: 1, stjarnor: Array(ANTAL_NIVAER).fill(0), nivaPoang: Array(ANTAL_NIVAER).fill(0), rekord: 0 };
   try {
     const sparat = JSON.parse(localStorage.getItem(SPARNYCKEL));
     if (sparat) {
       f.upplast = Math.min(ANTAL_NIVAER, Math.max(1, Number(sparat.upplast) || 1));
-      f.poang = Math.max(0, Number(sparat.poang) || 0);
-      f.rekord = Math.max(f.poang, Number(sparat.rekord) || 0);
+      for (let i = 0; i < ANTAL_NIVAER; i++) f.nivaPoang[i] = Math.max(0, Number(sparat.nivaPoang?.[i]) || 0);
+      f.rekord = Math.max(Number(sparat.rekord) || 0, f.nivaPoang.reduce((summa, p) => summa + p, 0));
       for (let i = 0; i < ANTAL_NIVAER; i++) f.stjarnor[i] = Math.min(3, Number(sparat.stjarnor?.[i]) || 0);
     }
   } catch {
     // Sparat värde saknas eller localStorage är avstängt.
   }
   return f;
+}
+
+function summaPoang() {
+  return framsteg.nivaPoang.reduce((summa, p) => summa + p, 0);
 }
 
 function sparaFramsteg() {
@@ -127,7 +137,9 @@ function startaNiva() {
   mal = { x: kolumner - 2, y: rader - 2 };
   klart = false;
   forlorat = false;
-  poang = poangNiva;
+  // Poängen från alla andra nivåer, för totalen och rekordet; nivån själv börjar alltid på 0.
+  poangNiva = summaPoang() - framsteg.nivaPoang[niva];
+  poang = 0;
   stjarnor = 0;
   skott = [];
   skapaMonster();
@@ -143,7 +155,7 @@ function skapaFynd() {
       if (karta[y][x] === 0 && franStart > 3 && !(x === mal.x && y === mal.y)) platser.push({ x, y });
     }
   }
-  const typer = [...Array(3).fill("stjarna"), ...Array(6 + grundNiva()).fill("pengar")];
+  const typer = [...Array(3).fill("stjarna"), ...Array(antalMynt(niva)).fill("pengar")];
   fynd = [];
   for (const typ of typer) {
     if (!platser.length) break;
@@ -160,6 +172,10 @@ function plockaUpp() {
       poang += 5;
     } else {
       poang++;
+    }
+    if (poangNiva + poang > framsteg.rekord) {
+      framsteg.rekord = poangNiva + poang;
+      sparaFramsteg();
     }
     return false;
   });
@@ -418,8 +434,8 @@ function flytta(dx, dy) {
     klart = true;
     framsteg.stjarnor[niva] = Math.max(framsteg.stjarnor[niva], stjarnor);
     framsteg.upplast = Math.min(ANTAL_NIVAER, Math.max(framsteg.upplast, niva + 2));
-    framsteg.poang = poang;
-    framsteg.rekord = Math.max(framsteg.rekord, poang);
+    framsteg.nivaPoang[niva] = poang;
+    framsteg.rekord = Math.max(framsteg.rekord, summaPoang());
     sparaFramsteg();
     if (niva + 1 >= ANTAL_NIVAER) allaKlara = true;
   }
@@ -427,7 +443,6 @@ function flytta(dx, dy) {
 
 function startaValdNiva() {
   niva = valdNiva;
-  poangNiva = framsteg.poang;
   allaKlara = false;
   startaNiva();
   skarm = "spel";
@@ -469,7 +484,6 @@ document.addEventListener("keydown", (e) => {
       valdNiva = niva;
       skarm = "val";
     } else if (klart) {
-      poangNiva = poang;
       niva++;
       startaNiva();
     }
@@ -691,7 +705,7 @@ function ritaNivaval() {
   ctx.fillStyle = "#ffd23a";
   ctx.font = "16px system-ui, sans-serif";
   ctx.textAlign = "right";
-  ctx.fillText(`Rekord: ${framsteg.rekord}   Stjärnor: ${totalt}/${ANTAL_NIVAER * 3}`, w - 40, 38);
+  ctx.fillText(`Rekord: ${framsteg.rekord}/${MAXPOANG}   Stjärnor: ${totalt}/${ANTAL_NIVAER * 3}`, w - 40, 38);
 
   const { bredd, hojd } = NIVARUTA;
   for (let i = 0; i < ANTAL_NIVAER; i++) {
@@ -706,21 +720,26 @@ function ritaNivaval() {
     ctx.strokeRect(x + 0.75, y + 0.75, bredd - 1.5, hojd - 1.5);
 
     ctx.fillStyle = last ? "#555" : "#fff";
-    ctx.font = "bold 16px system-ui, sans-serif";
+    ctx.font = "bold 14px system-ui, sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText(String(i + 1), x + 9, y + 26);
+    ctx.fillText(String(i + 1), x + 9, y + 17);
+
+    const max = maxPoangNiva(i);
+    ctx.fillStyle = last ? "#555" : framsteg.nivaPoang[i] >= max ? "#ffd23a" : "#bbb";
+    ctx.font = "11px system-ui, sans-serif";
+    ctx.fillText(`${framsteg.nivaPoang[i]}/${max} p`, x + 9, y + 33);
 
     if (last) {
       ctx.fillStyle = "#666";
-      ctx.fillRect(x + bredd - 26, y + hojd / 2 - 3, 14, 11);
+      ctx.fillRect(x + bredd - 26, y + 10, 14, 11);
       ctx.strokeStyle = "#666";
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(x + bredd - 19, y + hojd / 2 - 3, 4.5, Math.PI, 0);
+      ctx.arc(x + bredd - 19, y + 10, 4.5, Math.PI, 0);
       ctx.stroke();
     } else {
       for (let j = 0; j < 3; j++) {
-        stjarnaForm(x + bredd - 40 + j * 14, y + hojd / 2, 6);
+        stjarnaForm(x + bredd - 40 + j * 14, y + 13, 6);
         if (j < framsteg.stjarnor[i]) {
           ctx.fillStyle = "#ffd23a";
           ctx.fill();
@@ -757,7 +776,7 @@ function rita() {
   ctx.fillText(`Nivå ${niva + 1} av ${ANTAL_NIVAER}`, 10, 19);
   ctx.textAlign = "right";
   ctx.fillText(
-    `Poäng: ${poang}   Rekord: ${Math.max(framsteg.rekord, poang)}   Stjärnor: ${stjarnor}/3`,
+    `Poäng: ${poang}/${maxPoangNiva(niva)}   Rekord: ${framsteg.rekord}/${MAXPOANG}   Stjärnor: ${stjarnor}/3`,
     canvas.width - 10,
     19
   );
