@@ -1,7 +1,10 @@
 const canvas = document.getElementById("spelplan");
 const ctx = canvas.getContext("2d");
 
-const ANTAL_NIVAER = 10;
+const ANTAL_NIVAER = 100;
+// Banan slutar bli större efter nivå 10 (index 9) och de nya monstren kommer efter nivå 15.
+const MAX_STORLEKSNIVA = 9;
+const NYA_MONSTER_FRAN = 15;
 const TOPPFALT = 28;
 const RODA = "#ff2a2a";
 const GRON = "#2f9e44";
@@ -10,11 +13,10 @@ const LAVA = "#8f1403";
 const LAVA_LJUS = "#ff4a12";
 const SPELARE = "#2ad4ff";
 
-// Andel av de borttagbara väggarna som öppnas för att ge fler vägar till målet.
-const EXTRA_VAGAR = 0.5;
-
-// Andel av de inre lavaväggarna som istället blir bruna och ofarliga.
-const BRUNA_VAGGAR = 0.3;
+// Svårare nivåer: färre öppna vägar och färre ofarliga väggar ju längre man kommit.
+const extraVagar = () => Math.max(0.15, 0.5 - 0.004 * niva);
+const brunaVaggar = () => Math.max(0.1, 0.3 - 0.002 * niva);
+const grundNiva = () => Math.min(niva, MAX_STORLEKSNIVA);
 
 let niva = 0;
 let karta, kolumner, rader, ruta, offsetX, offsetY;
@@ -29,6 +31,7 @@ let fynd = [];
 let poang = 0;
 let poangNiva = 0;
 let stjarnor = 0;
+let skott = [];
 
 // Skapar en labyrint (rekursiv backtracking); 1 = vägg, 0 = gång.
 function skapaLabyrint(n, m) {
@@ -56,21 +59,21 @@ function skapaLabyrint(n, m) {
   for (let y = 1; y < r - 1; y++) {
     for (let x = 1; x < k - 1; x++) {
       const mellanVagg = (x % 2 === 0) !== (y % 2 === 0);
-      if (rutnat[y][x] === 1 && mellanVagg && Math.random() < EXTRA_VAGAR) rutnat[y][x] = 0;
+      if (rutnat[y][x] === 1 && mellanVagg && Math.random() < extraVagar()) rutnat[y][x] = 0;
     }
   }
   // 1 = lava, 2 = brun vägg som man bara studsar mot.
   for (let y = 1; y < r - 1; y++) {
     for (let x = 1; x < k - 1; x++) {
-      if (rutnat[y][x] === 1 && Math.random() < BRUNA_VAGGAR) rutnat[y][x] = 2;
+      if (rutnat[y][x] === 1 && Math.random() < brunaVaggar()) rutnat[y][x] = 2;
     }
   }
   return rutnat;
 }
 
 function startaNiva() {
-  const n = 8 + 2 * niva;
-  const m = 5 + niva;
+  const n = 6 + grundNiva();
+  const m = 4 + Math.floor(grundNiva() / 2);
   karta = skapaLabyrint(n, m);
   kolumner = 2 * n + 1;
   rader = 2 * m + 1;
@@ -83,6 +86,7 @@ function startaNiva() {
   forlorat = false;
   poang = poangNiva;
   stjarnor = 0;
+  skott = [];
   skapaMonster();
   skapaFynd();
 }
@@ -96,7 +100,7 @@ function skapaFynd() {
       if (karta[y][x] === 0 && franStart > 3 && !(x === mal.x && y === mal.y)) platser.push({ x, y });
     }
   }
-  const typer = [...Array(3).fill("stjarna"), ...Array(6 + niva).fill("pengar")];
+  const typer = [...Array(3).fill("stjarna"), ...Array(6 + grundNiva()).fill("pengar")];
   fynd = [];
   for (const typ of typer) {
     if (!platser.length) break;
@@ -141,9 +145,13 @@ function ritaFynd(f) {
 
 // tempo = antal bilder mellan varje steg, så lägre tal är snabbare.
 const MONSTERTYPER = {
-  vandrare: { farg: LILA, tempo: () => Math.max(22, 38 - 3 * niva) },
-  springare: { farg: "#ff4dcb", tempo: () => Math.max(12, 18 - niva) },
-  jagare: { farg: "#e6e6e6", tempo: () => Math.max(30, 50 - 2 * niva) },
+  vandrare: { farg: LILA, tempo: () => Math.max(22, 38 - 3 * grundNiva()) },
+  springare: { farg: "#ff4dcb", tempo: () => Math.max(12, 18 - grundNiva()) },
+  jagare: { farg: "#e6e6e6", tempo: () => Math.max(30, 50 - 2 * grundNiva()), jagar: true, argTempo: 11 },
+  // Ser spelaren genom väggar om den står rakt åt sidan eller rakt under, högst 10 rutor bort.
+  spok: { farg: "#7fd8ff", tempo: () => Math.max(34, 54 - 2 * grundNiva()), jagar: true, argTempo: 13, genomVaggar: true },
+  // Skjuter lava längs gången när den har rak siktlinje.
+  skytt: { farg: "#ff7a1a", tempo: () => Math.max(36, 56 - 2 * grundNiva()) },
 };
 
 const TYPLISTA = ["vandrare", "springare", "jagare"];
@@ -151,13 +159,20 @@ const TYPLISTA = ["vandrare", "springare", "jagare"];
 // Varje monster får en egen hastighet: 0.7 = 30 % snabbare, 1.4 = 40 % långsammare.
 function slumpTempo(typ) {
   const faktor = 0.7 + Math.random() * 0.7;
-  return Math.max(5, Math.round(MONSTERTYPER[typ].tempo() * faktor));
+  // Efter nivå 10 blir monstren bara långsamt snabbare, högst 30 %.
+  const sent = Math.min(0.3, Math.max(0, niva - MAX_STORLEKSNIVA) * 0.004);
+  return Math.max(5, Math.round(MONSTERTYPER[typ].tempo() * faktor * (1 - sent)));
 }
 
 // Placerar monster på slumpade gångar en bit från start och mål.
 function skapaMonster() {
-  const antal = 3 + niva;
+  // Antalet slutar öka efter nivå 10 och växer sedan bara med 1 var 15:e nivå.
+  const antal = 3 + grundNiva() + Math.floor(Math.max(0, niva - MAX_STORLEKSNIVA) / 15);
   const typer = Array.from({ length: antal }, (_, i) => TYPLISTA[i % TYPLISTA.length]);
+  if (niva >= NYA_MONSTER_FRAN) {
+    const par = 1 + Math.floor((niva - NYA_MONSTER_FRAN) / 25);
+    for (let i = 0; i < par; i++) typer.push("skytt", "spok");
+  }
   const platser = [];
   for (let y = 1; y < rader - 1; y++) {
     for (let x = 1; x < kolumner - 1; x++) {
@@ -170,7 +185,7 @@ function skapaMonster() {
   for (const typ of typer) {
     if (!platser.length) break;
     const p = platser.splice(Math.floor(Math.random() * platser.length), 1)[0];
-    monster.push({ typ, x: p.x, y: p.y, dx: 0, dy: 0, tempo: slumpTempo(typ), raknare: 0, arg: 0, vila: 0 });
+    monster.push({ typ, x: p.x, y: p.y, dx: 0, dy: 0, tempo: slumpTempo(typ), raknare: 0, arg: 0, vila: 0, laddar: 0 });
   }
 }
 
@@ -198,9 +213,12 @@ function arGron(x, y) {
   return (x === 1 && y === 1) || (x === mal.x && y === mal.y);
 }
 
-// Rak siktlinje längs rad eller kolumn utan väggar emellan.
+// Rak siktlinje längs rad eller kolumn, utan väggar emellan (spöket ignorerar väggar).
 function harSiktlinje(m) {
   if (m.x !== spelare.x && m.y !== spelare.y) return false;
+  if (MONSTERTYPER[m.typ].genomVaggar) {
+    return Math.abs(spelare.x - m.x) + Math.abs(spelare.y - m.y) <= 10;
+  }
   const sx = Math.sign(spelare.x - m.x);
   const sy = Math.sign(spelare.y - m.y);
   for (let x = m.x + sx, y = m.y + sy; x !== spelare.x || y !== spelare.y; x += sx, y += sy) {
@@ -216,7 +234,7 @@ function flyttaMonster(m) {
   if (!val.length) return;
   let lista = val;
 
-  if (m.typ === "jagare" && m.arg > 0) {
+  if (MONSTERTYPER[m.typ].jagar && m.arg > 0) {
     const avstand = avstandFranSpelare(60);
     const nu = avstand.get(m.y * kolumner + m.x);
     const narmare = val.filter(([dx, dy]) => avstand.get((m.y + dy) * kolumner + (m.x + dx)) < nu);
@@ -249,13 +267,29 @@ function skuggaForm(cx, cy, r) {
 function ritaMonster(m) {
   const cx = offsetX + (m.x + 0.5) * ruta;
   const cy = offsetY + (m.y + 0.5) * ruta;
-  const farg = m.arg > 0 ? RODA : MONSTERTYPER[m.typ].farg;
+  const farg = m.laddar > 0 ? "#ffe14a" : m.arg > 0 ? RODA : MONSTERTYPER[m.typ].farg;
+  ctx.globalAlpha = m.typ === "spok" ? 0.8 : 1;
   ctx.shadowColor = farg;
   ctx.shadowBlur = 10;
   ctx.fillStyle = farg;
   ctx.beginPath();
   if (m.typ === "vandrare") {
     ctx.arc(cx, cy, ruta * 0.4, 0, Math.PI * 2);
+  } else if (m.typ === "skytt") {
+    const r = ruta * 0.42;
+    ctx.moveTo(cx, cy - r);
+    ctx.lineTo(cx + r, cy + r * 0.8);
+    ctx.lineTo(cx - r, cy + r * 0.8);
+    ctx.closePath();
+  } else if (m.typ === "spok") {
+    const r = ruta * 0.4;
+    ctx.arc(cx, cy - r * 0.15, r, Math.PI, 0);
+    ctx.lineTo(cx + r, cy + r);
+    ctx.lineTo(cx + r * 0.5, cy + r * 0.7);
+    ctx.lineTo(cx, cy + r);
+    ctx.lineTo(cx - r * 0.5, cy + r * 0.7);
+    ctx.lineTo(cx - r, cy + r);
+    ctx.closePath();
   } else if (m.typ === "springare") {
     const r = ruta * 0.42;
     ctx.moveTo(cx, cy - r);
@@ -280,6 +314,31 @@ function ritaMonster(m) {
     ctx.beginPath();
     ctx.arc(ex + m.dx * ruta * 0.04, ey + m.dy * ruta * 0.04, ruta * 0.05, 0, Math.PI * 2);
     ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function ritaSkott(s) {
+  const cx = offsetX + (s.x + 0.5) * ruta;
+  const cy = offsetY + (s.y + 0.5) * ruta;
+  ctx.shadowColor = LAVA_LJUS;
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = "#ff5a14";
+  ctx.beginPath();
+  ctx.arc(cx, cy, ruta * 0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#ffc23a";
+  ctx.beginPath();
+  ctx.arc(cx, cy, ruta * 0.1, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function kollaSkott() {
+  if (skott.some((s) => s.x === spelare.x && s.y === spelare.y)) {
+    forlorat = true;
+    orsak = "Du träffades av lava!";
+    traffTimer = 12;
   }
 }
 
@@ -306,6 +365,7 @@ function flytta(dx, dy) {
   spelare.y = ny;
   plockaUpp();
   kollaMonster();
+  kollaSkott();
   if (forlorat) return;
   if (nx === mal.x && ny === mal.y) {
     klart = true;
@@ -525,6 +585,7 @@ function rita() {
   ctx.stroke();
 
   monster.forEach(ritaMonster);
+  skott.forEach(ritaSkott);
 
   ctx.restore();
 
@@ -560,7 +621,8 @@ function rita() {
 
   if (!klart && !forlorat) {
     for (const m of monster) {
-      if (m.typ === "jagare") {
+      const typ = MONSTERTYPER[m.typ];
+      if (typ.jagar) {
         // Blir arg 1,5 s vid siktlinje och vilar sedan 1,5 s så man hinner undan.
         if (m.arg > 0) {
           m.arg--;
@@ -571,13 +633,43 @@ function rita() {
           m.arg = 90;
         }
       }
+      if (m.typ === "skytt") {
+        // Laddar en kort stund (syns som gult) innan skottet går, så man hinner väja.
+        if (m.laddar > 0) {
+          m.laddar--;
+          if (m.laddar === 0) {
+            skott.push({ x: m.x, y: m.y, dx: m.sdx, dy: m.sdy, raknare: 0 });
+            m.vila = 100;
+          }
+          continue;
+        }
+        if (m.vila > 0) {
+          m.vila--;
+        } else if (harSiktlinje(m)) {
+          m.laddar = 35;
+          m.sdx = Math.sign(spelare.x - m.x);
+          m.sdy = Math.sign(spelare.y - m.y);
+          continue;
+        }
+      }
       m.raknare++;
-      if (m.raknare >= (m.arg > 0 ? 11 : m.tempo)) {
+      if (m.raknare >= (m.arg > 0 ? typ.argTempo : m.tempo)) {
         m.raknare = 0;
         flyttaMonster(m);
         kollaMonster();
       }
     }
+    for (const s of skott) {
+      s.raknare++;
+      if (s.raknare >= 6) {
+        s.raknare = 0;
+        s.x += s.dx;
+        s.y += s.dy;
+        if (karta[s.y][s.x] !== 0) s.borta = true;
+      }
+    }
+    skott = skott.filter((s) => !s.borta);
+    kollaSkott();
   }
 
   if (traffTimer > 0) traffTimer--;
