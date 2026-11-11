@@ -5,6 +5,7 @@ const ANTAL_NIVAER = 100;
 // Banan slutar bli större efter nivå 10 (index 9) och de nya monstren kommer efter nivå 15.
 const MAX_STORLEKSNIVA = 9;
 const NYA_MONSTER_FRAN = 15;
+const ANTAL_BROAR = 3;
 const TOPPFALT = 28;
 const RODA = "#ff2a2a";
 const GRON = "#2f9e44";
@@ -97,6 +98,18 @@ function skapaLabyrint(n, m) {
     for (let x = 1; x < k - 1; x++) {
       if (rutnat[y][x] === 1 && Math.random() < brunaVaggar()) rutnat[y][x] = 2;
     }
+  }
+  // 3 = träbro mellan två gångar som blir lava när man gått över den.
+  const broKandidater = [];
+  for (let y = 1; y < r - 1; y++) {
+    for (let x = 1; x < k - 1; x++) {
+      const mellanVagg = (x % 2 === 0) !== (y % 2 === 0);
+      if (rutnat[y][x] !== 0 && mellanVagg) broKandidater.push([x, y]);
+    }
+  }
+  for (let i = 0; i < ANTAL_BROAR && broKandidater.length; i++) {
+    const [bx, by] = broKandidater.splice(Math.floor(Math.random() * broKandidater.length), 1)[0];
+    rutnat[by][bx] = 3;
   }
   return rutnat;
 }
@@ -197,7 +210,9 @@ function slumpTempo(typ) {
 // Placerar monster på slumpade gångar en bit från start och mål.
 function skapaMonster() {
   // Flest vanliga monster på nivå 10, sedan färre och färre ner till 5.
-  const antal = Math.max(5, 3 + grundNiva() - Math.floor(Math.max(0, niva - MAX_STORLEKSNIVA) / 3));
+  const grundAntal = niva === 0 ? 1 : 2 + grundNiva();
+  const minskning = Math.floor(Math.max(0, niva - MAX_STORLEKSNIVA) / 3);
+  const antal = niva > MAX_STORLEKSNIVA ? Math.max(5, grundAntal - minskning) : grundAntal;
   const typer = Array.from({ length: antal }, (_, i) => TYPLISTA[i % TYPLISTA.length]);
   if (niva >= NYA_MONSTER_FRAN) {
     const par = 1 + Math.floor((niva - NYA_MONSTER_FRAN) / 25);
@@ -391,8 +406,10 @@ function flytta(dx, dy) {
     traffTimer = 12;
     return;
   }
+  const fran = { x: spelare.x, y: spelare.y };
   spelare.x = nx;
   spelare.y = ny;
+  if (karta[fran.y][fran.x] === 3) karta[fran.y][fran.x] = 1;
   plockaUpp();
   kollaMonster();
   kollaSkott();
@@ -537,6 +554,26 @@ function ritaTra(x, y, px, py) {
   ctx.fillRect(px + 1, py + 1, ruta - 2, 1);
 }
 
+function ritaBro(x, y, px, py) {
+  // Gången ligger till vänster och höger om bron eller ovanför och under.
+  const vagrat = karta[y][x - 1] === 0 && karta[y][x + 1] === 0;
+  const bx = vagrat ? px : px + ruta * 0.15;
+  const by = vagrat ? py + ruta * 0.15 : py;
+  const bb = vagrat ? ruta : ruta * 0.7;
+  const bh = vagrat ? ruta * 0.7 : ruta;
+  ctx.shadowColor = LAVA_LJUS;
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = "#3a210b";
+  ctx.fillRect(bx, by, bb, bh);
+  ctx.shadowBlur = 0;
+  for (let i = 0; i < 3; i++) {
+    const r = 140 + Math.floor(brus(x, y, 100 + i) * 40);
+    ctx.fillStyle = `rgb(${r}, ${Math.floor(r * 0.66)}, ${Math.floor(r * 0.36)})`;
+    if (vagrat) ctx.fillRect(bx + (bb * i) / 3, by + 1, bb / 3 - 1, bh - 2);
+    else ctx.fillRect(bx + 1, by + (bh * i) / 3, bb - 2, bh / 3 - 1);
+  }
+}
+
 function ritaStartsida() {
   const w = canvas.width;
   const h = canvas.height;
@@ -570,6 +607,7 @@ function ritaStartsida() {
     "Piltangenterna för att flytta dig.",
     "Lavan är farlig, men de bruna träväggarna är ofarliga.",
     "Plocka mynt (1 poäng) och stjärnor (5 poäng).",
+    "Träbroar över lavan går bara att gå över en gång.",
     "Se upp för monstren.",
   ];
   rader.forEach((text, i) => ctx.fillText(text, w / 2, h * 0.5 + i * 28));
@@ -710,7 +748,7 @@ function rita() {
   ctx.fillStyle = traffTimer > 0 ? "#ffb070" : LAVA;
   for (let y = 0; y < rader; y++) {
     for (let x = 0; x < kolumner; x++) {
-      if (karta[y][x] === 1) {
+      if (karta[y][x] === 1 || karta[y][x] === 3) {
         ctx.fillRect(offsetX + x * ruta, offsetY + y * ruta, ruta, ruta);
       }
     }
@@ -718,7 +756,7 @@ function rita() {
   ctx.shadowBlur = 0;
   for (let y = 0; y < rader; y++) {
     for (let x = 0; x < kolumner; x++) {
-      if (karta[y][x] !== 1) continue;
+      if (karta[y][x] !== 1 && karta[y][x] !== 3) continue;
       const px = offsetX + x * ruta;
       const py = offsetY + y * ruta;
       // Mörk skorpa som flyter ovanpå.
@@ -757,6 +795,7 @@ function rita() {
   for (let y = 0; y < rader; y++) {
     for (let x = 0; x < kolumner; x++) {
       if (karta[y][x] === 2) ritaTra(x, y, offsetX + x * ruta, offsetY + y * ruta);
+      else if (karta[y][x] === 3) ritaBro(x, y, offsetX + x * ruta, offsetY + y * ruta);
     }
   }
   ctx.shadowColor = GRON;
