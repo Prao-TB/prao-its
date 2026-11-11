@@ -32,6 +32,7 @@ let poang = 0;
 let poangNiva = 0;
 let stjarnor = 0;
 let skott = [];
+let startsida = true;
 
 // Skapar en labyrint (rekursiv backtracking); 1 = vägg, 0 = gång.
 function skapaLabyrint(n, m) {
@@ -351,7 +352,7 @@ function kollaMonster() {
 }
 
 function flytta(dx, dy) {
-  if (klart || forlorat) return;
+  if (startsida || klart || forlorat) return;
   const nx = spelare.x + dx;
   const ny = spelare.y + dy;
   if (karta[ny][nx] === 2) return;
@@ -385,7 +386,9 @@ document.addEventListener("keydown", (e) => {
     flytta(...riktningar[e.key]);
   } else if (e.key === " ") {
     e.preventDefault();
-    if (forlorat) {
+    if (startsida) {
+      startsida = false;
+    } else if (forlorat) {
       startaNiva();
     } else if (allaKlara) {
       poangNiva = 0;
@@ -480,7 +483,56 @@ function ritaTra(x, y, px, py) {
   ctx.fillRect(px + 1, py + 1, ruta - 2, 1);
 }
 
+function ritaStartsida() {
+  const w = canvas.width;
+  const h = canvas.height;
+  const tid = performance.now() / 400;
+  ctx.fillStyle = "#08080c";
+  ctx.fillRect(0, 0, w, h);
+
+  // Pulserande lavaglöd längst ner.
+  const glod = ctx.createLinearGradient(0, h * 0.6, 0, h);
+  glod.addColorStop(0, "rgba(143, 20, 3, 0)");
+  glod.addColorStop(1, `rgba(255, 74, 18, ${0.45 + 0.15 * Math.sin(tid)})`);
+  ctx.fillStyle = glod;
+  ctx.fillRect(0, h * 0.6, w, h * 0.4);
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.shadowColor = LAVA_LJUS;
+  ctx.shadowBlur = 20 + 8 * Math.sin(tid);
+  ctx.fillStyle = "#ff6a2a";
+  ctx.font = "bold 72px system-ui, sans-serif";
+  ctx.fillText("FLYKTEN", w / 2, h * 0.28);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = "#ccc";
+  ctx.font = "20px system-ui, sans-serif";
+  ctx.fillText("Ta dig igenom labyrinten till den gröna rutan.", w / 2, h * 0.4);
+
+  ctx.font = "17px system-ui, sans-serif";
+  ctx.fillStyle = "#aaa";
+  const rader = [
+    "Piltangenterna för att flytta dig.",
+    "Lavan är farlig, men de bruna träväggarna är ofarliga.",
+    "Plocka mynt (1 poäng) och stjärnor (5 poäng).",
+    "Se upp för monstren.",
+  ];
+  rader.forEach((text, i) => ctx.fillText(text, w / 2, h * 0.5 + i * 28));
+
+  ctx.globalAlpha = 0.55 + 0.45 * Math.sin(tid * 1.5);
+  ctx.fillStyle = "#fff";
+  ctx.font = "22px system-ui, sans-serif";
+  ctx.fillText("Tryck mellanslag för att starta", w / 2, h * 0.84);
+  ctx.globalAlpha = 1;
+}
+
 function rita() {
+  if (startsida) {
+    ritaStartsida();
+    requestAnimationFrame(rita);
+    return;
+  }
   ctx.fillStyle = "#08080c";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
