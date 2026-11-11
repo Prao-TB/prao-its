@@ -6,12 +6,15 @@ const TOPPFALT = 28;
 const RODA = "#ff2a2a";
 const GRON = "#2f9e44";
 const LILA = "#c04dff";
-const LAVA = "#c8300a";
-const LAVA_LJUS = "#ff8a1c";
+const LAVA = "#8f1403";
+const LAVA_LJUS = "#ff4a12";
 const SPELARE = "#2ad4ff";
 
 // Andel av de borttagbara väggarna som öppnas för att ge fler vägar till målet.
-const EXTRA_VAGAR = 0.2;
+const EXTRA_VAGAR = 0.5;
+
+// Andel av de inre lavaväggarna som istället blir bruna och ofarliga.
+const BRUNA_VAGGAR = 0.3;
 
 let niva = 0;
 let karta, kolumner, rader, ruta, offsetX, offsetY;
@@ -54,6 +57,12 @@ function skapaLabyrint(n, m) {
     for (let x = 1; x < k - 1; x++) {
       const mellanVagg = (x % 2 === 0) !== (y % 2 === 0);
       if (rutnat[y][x] === 1 && mellanVagg && Math.random() < EXTRA_VAGAR) rutnat[y][x] = 0;
+    }
+  }
+  // 1 = lava, 2 = brun vägg som man bara studsar mot.
+  for (let y = 1; y < r - 1; y++) {
+    for (let x = 1; x < k - 1; x++) {
+      if (rutnat[y][x] === 1 && Math.random() < BRUNA_VAGGAR) rutnat[y][x] = 2;
     }
   }
   return rutnat;
@@ -195,7 +204,7 @@ function harSiktlinje(m) {
   const sx = Math.sign(spelare.x - m.x);
   const sy = Math.sign(spelare.y - m.y);
   for (let x = m.x + sx, y = m.y + sy; x !== spelare.x || y !== spelare.y; x += sx, y += sy) {
-    if (karta[y][x] === 1) return false;
+    if (karta[y][x] !== 0) return false;
   }
   return true;
 }
@@ -286,6 +295,7 @@ function flytta(dx, dy) {
   if (klart || forlorat) return;
   const nx = spelare.x + dx;
   const ny = spelare.y + dy;
+  if (karta[ny][nx] === 2) return;
   if (karta[ny][nx] === 1) {
     forlorat = true;
     orsak = "Lavan är farlig!";
@@ -330,6 +340,86 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+// Bestämt "slump" 0–1 per ruta så att mönstret inte fladdrar mellan bilderna.
+function brus(x, y, i) {
+  const s = Math.sin(x * 127.1 + y * 311.7 + i * 74.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+function ritaSten(x, y, px, py) {
+  const g = 80 + Math.floor(brus(x, y, 0) * 30);
+  const kant = Math.max(1, ruta * 0.08);
+  ctx.fillStyle = "#1e1e23";
+  ctx.fillRect(px, py, ruta, ruta);
+  ctx.fillStyle = `rgb(${g}, ${g}, ${g + 4})`;
+  ctx.fillRect(px + 1, py + 1, ruta - 2, ruta - 2);
+  // Korn i stenen.
+  for (let i = 1; i <= 10; i++) {
+    ctx.fillStyle = brus(x, y, i) > 0.5 ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.18)";
+    const s = Math.max(1, ruta * 0.07);
+    ctx.fillRect(px + 2 + brus(x, y, i + 20) * (ruta - 4 - s), py + 2 + brus(x, y, i + 40) * (ruta - 4 - s), s, s);
+  }
+  ctx.fillStyle = "rgba(255,255,255,0.14)";
+  ctx.fillRect(px + 1, py + 1, ruta - 2, kant);
+  ctx.fillRect(px + 1, py + 1, kant, ruta - 2);
+  ctx.fillStyle = "rgba(0,0,0,0.25)";
+  ctx.fillRect(px + 1, py + ruta - 1 - kant, ruta - 2, kant);
+  ctx.fillRect(px + ruta - 1 - kant, py + 1, kant, ruta - 2);
+  // Spricka på vissa plattor.
+  if (brus(x, y, 60) < 0.3) {
+    ctx.strokeStyle = "rgba(0,0,0,0.45)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    const sx = px + ruta * (0.2 + brus(x, y, 61) * 0.6);
+    ctx.moveTo(sx, py + 2);
+    ctx.lineTo(sx + ruta * (brus(x, y, 62) - 0.5) * 0.4, py + ruta * 0.5);
+    ctx.lineTo(sx + ruta * (brus(x, y, 63) - 0.5) * 0.5, py + ruta - 2);
+    ctx.stroke();
+  }
+}
+
+function ritaTra(x, y, px, py) {
+  const ljus = brus(x, y, 0) * 0.3;
+  ctx.fillStyle = "#2e1a0a";
+  ctx.fillRect(px, py, ruta, ruta);
+  // Två brädor ovanpå varandra med vedådrornas riktning längs brädan.
+  for (let b = 0; b < 2; b++) {
+    const by = py + 1 + b * (ruta / 2);
+    const bh = ruta / 2 - 1;
+    const r = 110 + Math.floor((ljus + brus(x, y, 10 + b) * 0.25) * 60);
+    ctx.fillStyle = `rgb(${r}, ${Math.floor(r * 0.62)}, ${Math.floor(r * 0.33)})`;
+    ctx.fillRect(px + 1, by, ruta - 2, bh);
+    ctx.strokeStyle = "rgba(50,25,8,0.45)";
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= 3; i++) {
+      const ly = by + (bh * i) / 4;
+      ctx.beginPath();
+      ctx.moveTo(px + 1, ly);
+      ctx.bezierCurveTo(
+        px + ruta * 0.35, ly + (brus(x, y, 20 + b * 3 + i) - 0.5) * bh * 0.3,
+        px + ruta * 0.65, ly + (brus(x, y, 30 + b * 3 + i) - 0.5) * bh * 0.3,
+        px + ruta - 1, ly
+      );
+      ctx.stroke();
+    }
+    // Kvist på vissa brädor.
+    if (brus(x, y, 40 + b) < 0.2) {
+      ctx.fillStyle = "rgba(40,20,6,0.7)";
+      ctx.beginPath();
+      ctx.ellipse(px + ruta * (0.3 + brus(x, y, 50 + b) * 0.4), by + bh / 2, ruta * 0.1, bh * 0.28, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  // Spik i hjärnen på varje bräda.
+  ctx.fillStyle = "rgba(20,12,6,0.8)";
+  const s = Math.max(1, ruta * 0.06);
+  for (const [nx, ny] of [[0.12, 0.25], [0.88, 0.25], [0.12, 0.75], [0.88, 0.75]]) {
+    ctx.fillRect(px + ruta * nx - s / 2, py + ruta * ny - s / 2, s, s);
+  }
+  ctx.fillStyle = "rgba(255,255,255,0.1)";
+  ctx.fillRect(px + 1, py + 1, ruta - 2, 1);
+}
+
 function rita() {
   ctx.fillStyle = "#08080c";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -348,6 +438,13 @@ function rita() {
   ctx.save();
   ctx.translate(skak, skak);
 
+  // Stenplattor på gångarna.
+  for (let y = 0; y < rader; y++) {
+    for (let x = 0; x < kolumner; x++) {
+      if (karta[y][x] === 0) ritaSten(x, y, offsetX + x * ruta, offsetY + y * ruta);
+    }
+  }
+
   // Lava: orange botten med gula fläckar som pulserar.
   const tid = performance.now() / 300;
   ctx.shadowColor = LAVA;
@@ -361,25 +458,49 @@ function rita() {
     }
   }
   ctx.shadowBlur = 0;
-  ctx.fillStyle = LAVA_LJUS;
   for (let y = 0; y < rader; y++) {
     for (let x = 0; x < kolumner; x++) {
-      if (karta[y][x] === 1) {
-        ctx.globalAlpha = 0.25 + 0.25 * Math.sin(tid + x * 1.7 + y * 2.3);
+      if (karta[y][x] !== 1) continue;
+      const px = offsetX + x * ruta;
+      const py = offsetY + y * ruta;
+      // Mörk skorpa som flyter ovanpå.
+      ctx.fillStyle = "rgba(25, 4, 0, 0.55)";
+      ctx.beginPath();
+      ctx.ellipse(
+        px + ruta * (0.25 + brus(x, y, 70) * 0.5),
+        py + ruta * (0.25 + brus(x, y, 71) * 0.5),
+        ruta * (0.15 + brus(x, y, 72) * 0.2),
+        ruta * (0.1 + brus(x, y, 73) * 0.15),
+        brus(x, y, 74) * Math.PI,
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+      // Glödande fläckar som pulserar, med het kärna.
+      for (let i = 0; i < 2; i++) {
+        const bx = px + ruta * (0.2 + brus(x, y, 80 + i) * 0.6);
+        const by = py + ruta * (0.2 + brus(x, y, 90 + i) * 0.6);
+        const puls = 0.5 + 0.5 * Math.sin(tid + x * 1.7 + y * 2.3 + i * 2.1);
+        ctx.globalAlpha = 0.3 + 0.4 * puls;
+        ctx.fillStyle = LAVA_LJUS;
         ctx.beginPath();
-        ctx.arc(
-          offsetX + (x + 0.5) * ruta,
-          offsetY + (y + 0.5) * ruta,
-          ruta * 0.3,
-          0,
-          Math.PI * 2
-        );
+        ctx.arc(bx, by, ruta * (0.14 + 0.08 * puls), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 0.25 + 0.5 * puls;
+        ctx.fillStyle = "#ffb02e";
+        ctx.beginPath();
+        ctx.arc(bx, by, ruta * 0.06, 0, Math.PI * 2);
         ctx.fill();
       }
     }
   }
   ctx.globalAlpha = 1;
 
+  for (let y = 0; y < rader; y++) {
+    for (let x = 0; x < kolumner; x++) {
+      if (karta[y][x] === 2) ritaTra(x, y, offsetX + x * ruta, offsetY + y * ruta);
+    }
+  }
   ctx.shadowColor = GRON;
   ctx.shadowBlur = 3;
   ctx.fillStyle = GRON;
