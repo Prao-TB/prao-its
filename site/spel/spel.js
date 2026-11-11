@@ -184,6 +184,11 @@ function avstandFranSpelare(maxSteg) {
   return avstand;
 }
 
+// Start- och målrutan är gröna och monster får inte gå in på dem.
+function arGron(x, y) {
+  return (x === 1 && y === 1) || (x === mal.x && y === mal.y);
+}
+
 // Rak siktlinje längs rad eller kolumn utan väggar emellan.
 function harSiktlinje(m) {
   if (m.x !== spelare.x && m.y !== spelare.y) return false;
@@ -196,7 +201,10 @@ function harSiktlinje(m) {
 }
 
 function flyttaMonster(m) {
-  const val = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => karta[m.y + dy][m.x + dx] === 0);
+  const val = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(
+    ([dx, dy]) => karta[m.y + dy][m.x + dx] === 0 && !arGron(m.x + dx, m.y + dy)
+  );
+  if (!val.length) return;
   let lista = val;
 
   if (m.typ === "jagare" && m.arg > 0) {
