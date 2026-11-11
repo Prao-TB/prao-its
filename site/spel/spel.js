@@ -32,7 +32,36 @@ let poang = 0;
 let poangNiva = 0;
 let stjarnor = 0;
 let skott = [];
-let startsida = true;
+let skarm = "start"; // "start", "val" eller "spel"
+let valdNiva = 0;
+
+// upplast = antal nivåer som är öppna, stjarnor = bäst antal stjärnor per nivå, poang = sparad poäng.
+const SPARNYCKEL = "flykten-framsteg";
+let framsteg = laddaFramsteg();
+
+function laddaFramsteg() {
+  const f = { upplast: 1, stjarnor: Array(ANTAL_NIVAER).fill(0), poang: 0, rekord: 0 };
+  try {
+    const sparat = JSON.parse(localStorage.getItem(SPARNYCKEL));
+    if (sparat) {
+      f.upplast = Math.min(ANTAL_NIVAER, Math.max(1, Number(sparat.upplast) || 1));
+      f.poang = Math.max(0, Number(sparat.poang) || 0);
+      f.rekord = Math.max(f.poang, Number(sparat.rekord) || 0);
+      for (let i = 0; i < ANTAL_NIVAER; i++) f.stjarnor[i] = Math.min(3, Number(sparat.stjarnor?.[i]) || 0);
+    }
+  } catch {
+    // Sparat värde saknas eller localStorage är avstängt.
+  }
+  return f;
+}
+
+function sparaFramsteg() {
+  try {
+    localStorage.setItem(SPARNYCKEL, JSON.stringify(framsteg));
+  } catch {
+    // localStorage är avstängt.
+  }
+}
 
 // Skapar en labyrint (rekursiv backtracking); 1 = vägg, 0 = gång.
 function skapaLabyrint(n, m) {
@@ -352,7 +381,7 @@ function kollaMonster() {
 }
 
 function flytta(dx, dy) {
-  if (startsida || klart || forlorat) return;
+  if (skarm !== "spel" || klart || forlorat) return;
   const nx = spelare.x + dx;
   const ny = spelare.y + dy;
   if (karta[ny][nx] === 2) return;
@@ -370,6 +399,11 @@ function flytta(dx, dy) {
   if (forlorat) return;
   if (nx === mal.x && ny === mal.y) {
     klart = true;
+    framsteg.stjarnor[niva] = Math.max(framsteg.stjarnor[niva], stjarnor);
+    framsteg.upplast = Math.min(ANTAL_NIVAER, Math.max(framsteg.upplast, niva + 2));
+    framsteg.poang = poang;
+    framsteg.rekord = Math.max(framsteg.rekord, poang);
+    sparaFramsteg();
     if (niva + 1 >= ANTAL_NIVAER) allaKlara = true;
   }
 }
@@ -383,18 +417,38 @@ document.addEventListener("keydown", (e) => {
   };
   if (riktningar[e.key]) {
     e.preventDefault();
-    flytta(...riktningar[e.key]);
+    if (skarm === "val") {
+      const [dx, dy] = riktningar[e.key];
+      valdNiva = Math.min(ANTAL_NIVAER - 1, Math.max(0, valdNiva + dx + dy * 10));
+    } else {
+      flytta(...riktningar[e.key]);
+    }
+  } else if (e.key === "Escape") {
+    if (skarm === "spel") {
+      valdNiva = niva;
+      skarm = "val";
+    } else if (skarm === "val") {
+      skarm = "start";
+    }
   } else if (e.key === " ") {
     e.preventDefault();
-    if (startsida) {
-      startsida = false;
+    if (skarm === "start") {
+      valdNiva = framsteg.upplast - 1;
+      skarm = "val";
+    } else if (skarm === "val") {
+      if (valdNiva < framsteg.upplast) {
+        niva = valdNiva;
+        poangNiva = framsteg.poang;
+        allaKlara = false;
+        startaNiva();
+        skarm = "spel";
+      }
     } else if (forlorat) {
       startaNiva();
     } else if (allaKlara) {
-      poangNiva = 0;
-      niva = 0;
       allaKlara = false;
-      startaNiva();
+      valdNiva = niva;
+      skarm = "val";
     } else if (klart) {
       poangNiva = poang;
       niva++;
@@ -527,9 +581,94 @@ function ritaStartsida() {
   ctx.globalAlpha = 1;
 }
 
+function stjarnaForm(cx, cy, r) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const rr = r * (i % 2 === 0 ? 1 : 0.42);
+    const v = -Math.PI / 2 + (i * Math.PI) / 5;
+    ctx.lineTo(cx + rr * Math.cos(v), cy + rr * Math.sin(v));
+  }
+  ctx.closePath();
+}
+
+function ritaNivaval() {
+  const w = canvas.width;
+  const tid = performance.now() / 400;
+  ctx.fillStyle = "#08080c";
+  ctx.fillRect(0, 0, w, canvas.height);
+  ctx.textBaseline = "alphabetic";
+
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#ff6a2a";
+  ctx.font = "bold 30px system-ui, sans-serif";
+  ctx.fillText("VÄLJ NIVÅ", 40, 42);
+
+  ctx.fillStyle = "#888";
+  ctx.font = "14px system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("Pilar: välj   Mellanslag: spela   Esc: tillbaka", 250, 38);
+
+  const totalt = framsteg.stjarnor.reduce((summa, s) => summa + s, 0);
+  ctx.fillStyle = "#ffd23a";
+  ctx.font = "16px system-ui, sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillText(`Rekord: ${framsteg.rekord}   Stjärnor: ${totalt}/${ANTAL_NIVAER * 3}`, w - 40, 38);
+
+  const bredd = 82;
+  const hojd = 40;
+  const mellan = 6;
+  const startX = (w - (10 * bredd + 9 * mellan)) / 2;
+  for (let i = 0; i < ANTAL_NIVAER; i++) {
+    const x = startX + (i % 10) * (bredd + mellan);
+    const y = 64 + Math.floor(i / 10) * (hojd + mellan);
+    const last = i >= framsteg.upplast;
+    const klarad = i < framsteg.upplast - 1;
+
+    ctx.fillStyle = last ? "#15151a" : klarad ? "#16301b" : "#3a2410";
+    ctx.fillRect(x, y, bredd, hojd);
+    ctx.strokeStyle = last ? "#2a2a32" : klarad ? GRON : LAVA_LJUS;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x + 0.75, y + 0.75, bredd - 1.5, hojd - 1.5);
+
+    ctx.fillStyle = last ? "#555" : "#fff";
+    ctx.font = "bold 16px system-ui, sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(String(i + 1), x + 9, y + 26);
+
+    if (last) {
+      ctx.fillStyle = "#666";
+      ctx.fillRect(x + bredd - 26, y + hojd / 2 - 3, 14, 11);
+      ctx.strokeStyle = "#666";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x + bredd - 19, y + hojd / 2 - 3, 4.5, Math.PI, 0);
+      ctx.stroke();
+    } else {
+      for (let j = 0; j < 3; j++) {
+        stjarnaForm(x + bredd - 40 + j * 14, y + hojd / 2, 6);
+        if (j < framsteg.stjarnor[i]) {
+          ctx.fillStyle = "#ffd23a";
+          ctx.fill();
+        } else {
+          ctx.strokeStyle = "#666";
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      }
+    }
+
+    if (i === valdNiva) {
+      ctx.strokeStyle = `rgba(255, 255, 255, ${0.65 + 0.35 * Math.sin(tid * 2)})`;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x - 1, y - 1, bredd + 2, hojd + 2);
+    }
+  }
+}
+
 function rita() {
-  if (startsida) {
-    ritaStartsida();
+  if (skarm !== "spel") {
+    if (skarm === "start") ritaStartsida();
+    else ritaNivaval();
     requestAnimationFrame(rita);
     return;
   }
@@ -542,7 +681,14 @@ function rita() {
   ctx.textBaseline = "alphabetic";
   ctx.fillText(`Nivå ${niva + 1} av ${ANTAL_NIVAER}`, 10, 19);
   ctx.textAlign = "right";
-  ctx.fillText(`Poäng: ${poang}   Stjärnor: ${stjarnor}/3`, canvas.width - 10, 19);
+  ctx.fillText(
+    `Poäng: ${poang}   Rekord: ${Math.max(framsteg.rekord, poang)}   Stjärnor: ${stjarnor}/3`,
+    canvas.width - 10,
+    19
+  );
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#777";
+  ctx.fillText("Esc: nivåval", canvas.width / 2, 19);
   ctx.textAlign = "left";
 
   // Skakar lite när man förlorar.
