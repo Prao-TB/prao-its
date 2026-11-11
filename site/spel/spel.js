@@ -166,8 +166,8 @@ function slumpTempo(typ) {
 
 // Placerar monster på slumpade gångar en bit från start och mål.
 function skapaMonster() {
-  // Antalet slutar öka efter nivå 10 och växer sedan bara med 1 var 15:e nivå.
-  const antal = 3 + grundNiva() + Math.floor(Math.max(0, niva - MAX_STORLEKSNIVA) / 15);
+  // Flest vanliga monster på nivå 10, sedan färre och färre ner till 5.
+  const antal = Math.max(5, 3 + grundNiva() - Math.floor(Math.max(0, niva - MAX_STORLEKSNIVA) / 3));
   const typer = Array.from({ length: antal }, (_, i) => TYPLISTA[i % TYPLISTA.length]);
   if (niva >= NYA_MONSTER_FRAN) {
     const par = 1 + Math.floor((niva - NYA_MONSTER_FRAN) / 25);
