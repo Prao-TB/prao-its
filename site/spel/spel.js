@@ -44,19 +44,23 @@ let stjarnor = 0;
 let skott = [];
 let skarm = "start"; // "start", "val" eller "spel"
 let valdNiva = 0;
+// Poäng sedan senaste döden, och serien man hade när man dog.
+let serie = 0;
+let senasteSerie = 0;
 
 // upplast = antal nivåer som är öppna, stjarnor = bäst antal stjärnor per nivå, nivaPoang = poäng från senast klarade försöket per nivå.
 const SPARNYCKEL = "flykten-framsteg";
 let framsteg = laddaFramsteg();
 
 function laddaFramsteg() {
-  const f = { upplast: 1, stjarnor: Array(ANTAL_NIVAER).fill(0), nivaPoang: Array(ANTAL_NIVAER).fill(0), rekord: 0 };
+  const f = { upplast: 1, stjarnor: Array(ANTAL_NIVAER).fill(0), nivaPoang: Array(ANTAL_NIVAER).fill(0), rekord: 0, bastaSerie: 0 };
   try {
     const sparat = JSON.parse(localStorage.getItem(SPARNYCKEL));
     if (sparat) {
       f.upplast = Math.min(ANTAL_NIVAER, Math.max(1, Number(sparat.upplast) || 1));
       for (let i = 0; i < ANTAL_NIVAER; i++) f.nivaPoang[i] = Math.max(0, Number(sparat.nivaPoang?.[i]) || 0);
       f.rekord = Math.max(Number(sparat.rekord) || 0, f.nivaPoang.reduce((summa, p) => summa + p, 0));
+      f.bastaSerie = Math.max(0, Number(sparat.bastaSerie) || 0);
       for (let i = 0; i < ANTAL_NIVAER; i++) f.stjarnor[i] = Math.min(3, Number(sparat.stjarnor?.[i]) || 0);
     }
   } catch {
@@ -173,11 +177,17 @@ function plockaUpp() {
     if (f.typ === "stjarna") {
       stjarnor++;
       poang += 5;
+      serie += 5;
     } else {
       poang++;
+      serie++;
     }
     if (poangNiva + poang > framsteg.rekord) {
       framsteg.rekord = poangNiva + poang;
+      sparaFramsteg();
+    }
+    if (serie > framsteg.bastaSerie) {
+      framsteg.bastaSerie = serie;
       sparaFramsteg();
     }
     return false;
@@ -440,19 +450,24 @@ function ritaSkott(s) {
   ctx.fill();
 }
 
+function forlora(text) {
+  if (forlorat) return;
+  forlorat = true;
+  orsak = text;
+  traffTimer = 12;
+  senasteSerie = serie;
+  serie = 0;
+}
+
 function kollaSkott() {
   if (skott.some((s) => s.x === spelare.x && s.y === spelare.y)) {
-    forlorat = true;
-    orsak = "Du träffades av lava!";
-    traffTimer = 12;
+    forlora("Du träffades av lava!");
   }
 }
 
 function kollaMonster() {
   if (monster.some((m) => m.x === spelare.x && m.y === spelare.y)) {
-    forlorat = true;
-    orsak = "Ett monster fångade dig!";
-    traffTimer = 12;
+    forlora("Ett monster fångade dig!");
   }
 }
 
@@ -462,9 +477,7 @@ function flytta(dx, dy) {
   const ny = spelare.y + dy;
   if (karta[ny][nx] === 2) return;
   if (karta[ny][nx] === 1) {
-    forlorat = true;
-    orsak = "Lavan är farlig!";
-    traffTimer = 12;
+    forlora("Lavan är farlig!");
     return;
   }
   const fran = { x: spelare.x, y: spelare.y };
@@ -488,6 +501,7 @@ function flytta(dx, dy) {
 
 function startaValdNiva() {
   niva = valdNiva;
+  serie = 0;
   allaKlara = false;
   startaNiva();
   skarm = "spel";
@@ -750,7 +764,13 @@ function ritaNivaval() {
   ctx.fillStyle = "#ffd23a";
   ctx.font = "16px system-ui, sans-serif";
   ctx.textAlign = "right";
-  ctx.fillText(`Rekord: ${framsteg.rekord}/${MAXPOANG}   Stjärnor: ${totalt}/${ANTAL_NIVAER * 3}`, w - 40, 38);
+  ctx.font = "14px system-ui, sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillText(
+    `Rekord: ${framsteg.bastaSerie}   Max: ${framsteg.rekord}/${MAXPOANG}   Stjärnor: ${totalt}/${ANTAL_NIVAER * 3}`,
+    w - 40,
+    38
+  );
 
   const { bredd, hojd } = NIVARUTA;
   for (let i = 0; i < ANTAL_NIVAER; i++) {
@@ -820,14 +840,16 @@ function rita() {
   ctx.textBaseline = "alphabetic";
   ctx.fillText(`Nivå ${niva + 1} av ${ANTAL_NIVAER}`, 10, 19);
   ctx.textAlign = "right";
+  ctx.font = "14px system-ui, sans-serif";
   ctx.fillText(
-    `Poäng: ${poang}/${maxPoangNiva(niva)}   Rekord: ${framsteg.rekord}/${MAXPOANG}   Stjärnor: ${stjarnor}/3`,
+    `Poäng: ${poang}/${maxPoangNiva(niva)}   Serie: ${serie}   Rekord: ${framsteg.bastaSerie}   Max: ${framsteg.rekord}/${MAXPOANG}   Stjärnor: ${stjarnor}/3`,
     canvas.width - 10,
     19
   );
-  ctx.textAlign = "center";
+  ctx.textAlign = "left";
   ctx.fillStyle = "#777";
-  ctx.fillText("Esc: nivåval", canvas.width / 2, 19);
+  ctx.fillText("Esc: nivåval", 170, 19);
+  ctx.font = "16px system-ui, sans-serif";
   ctx.textAlign = "left";
 
   // Skakar lite när man förlorar.
@@ -936,6 +958,12 @@ function rita() {
     ctx.fillText("Du förlorade! " + orsak, canvas.width / 2, canvas.height / 2);
     ctx.font = "16px system-ui, sans-serif";
     ctx.fillText("Tryck mellanslag för att försöka igen", canvas.width / 2, canvas.height / 2 + 30);
+    ctx.fillStyle = "#ffd23a";
+    ctx.fillText(
+      `Din serie: ${senasteSerie} poäng   Rekord: ${framsteg.bastaSerie}`,
+      canvas.width / 2,
+      canvas.height / 2 + 60
+    );
   }
 
   if (klart) {
