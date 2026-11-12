@@ -5,6 +5,9 @@ const ANTAL_NIVAER = 100;
 // Banan slutar bli större efter nivå 10 (index 9) och de nya monstren kommer efter nivå 15.
 const MAX_STORLEKSNIVA = 9;
 const NYA_MONSTER_FRAN = 15;
+// Från nivå 50 (index 49) försvinner de vanliga monstren och bara dessa kommer.
+const SENA_MONSTER_FRAN = 49;
+const SENA_TYPER = ["skytt", "spok", "teleportor", "korsskytt"];
 const ANTAL_BROAR = 3;
 
 // Mynt (1 poäng) och 3 stjärnor (5 poäng vardera) per nivå, samma antal som skapaFynd lägger ut.
@@ -211,6 +214,10 @@ const MONSTERTYPER = {
   spok: { farg: "#7fd8ff", tempo: () => Math.max(34, 54 - 2 * grundNiva()), jagar: true, argTempo: 13, genomVaggar: true },
   // Skjuter lava längs gången när den har rak siktlinje.
   skytt: { farg: "#ff7a1a", tempo: () => Math.max(36, 56 - 2 * grundNiva()) },
+  // Står still, varnar med en ring och hoppar sedan till en ruta nära spelaren.
+  teleportor: { farg: "#3dffc0", tempo: () => 40 },
+  // Skjuter lava åt alla fyra håll med jämna mellanrum, även utan siktlinje.
+  korsskytt: { farg: "#ff3d7a", tempo: () => Math.max(40, 60 - 2 * grundNiva()) },
 };
 
 const TYPLISTA = ["vandrare", "springare", "jagare"];
@@ -218,8 +225,8 @@ const TYPLISTA = ["vandrare", "springare", "jagare"];
 // Varje monster får en egen hastighet: 0.7 = 30 % snabbare, 1.4 = 40 % långsammare.
 function slumpTempo(typ) {
   const faktor = 0.7 + Math.random() * 0.7;
-  // Efter nivå 10 blir monstren bara långsamt snabbare, högst 30 %.
-  const sent = Math.min(0.3, Math.max(0, niva - MAX_STORLEKSNIVA) * 0.004);
+  // Efter nivå 10 blir monstren långsamt snabbare, högst 40 %.
+  const sent = Math.min(0.4, Math.max(0, niva - MAX_STORLEKSNIVA) * 0.005);
   return Math.max(5, Math.round(MONSTERTYPER[typ].tempo() * faktor * (1 - sent)));
 }
 
@@ -229,10 +236,16 @@ function skapaMonster() {
   const grundAntal = niva === 0 ? 1 : 2 + grundNiva();
   const minskning = Math.floor(Math.max(0, niva - MAX_STORLEKSNIVA) / 3);
   const antal = niva > MAX_STORLEKSNIVA ? Math.max(5, grundAntal - minskning) : grundAntal;
-  const typer = Array.from({ length: antal }, (_, i) => TYPLISTA[i % TYPLISTA.length]);
-  if (niva >= NYA_MONSTER_FRAN) {
-    const par = 1 + Math.floor((niva - NYA_MONSTER_FRAN) / 25);
-    for (let i = 0; i < par; i++) typer.push("skytt", "spok");
+  let typer;
+  if (niva >= SENA_MONSTER_FRAN) {
+    const antalSena = 8 + Math.floor((niva - SENA_MONSTER_FRAN) / 10);
+    typer = Array.from({ length: antalSena }, (_, i) => SENA_TYPER[i % SENA_TYPER.length]);
+  } else {
+    typer = Array.from({ length: antal }, (_, i) => TYPLISTA[i % TYPLISTA.length]);
+    if (niva >= NYA_MONSTER_FRAN) {
+      const par = 1 + Math.floor((niva - NYA_MONSTER_FRAN) / 15);
+      for (let i = 0; i < par; i++) typer.push("skytt", "spok");
+    }
   }
   const platser = [];
   for (let y = 1; y < rader - 1; y++) {
@@ -246,7 +259,9 @@ function skapaMonster() {
   for (const typ of typer) {
     if (!platser.length) break;
     const p = platser.splice(Math.floor(Math.random() * platser.length), 1)[0];
-    monster.push({ typ, x: p.x, y: p.y, dx: 0, dy: 0, tempo: slumpTempo(typ), raknare: 0, arg: 0, vila: 0, laddar: 0 });
+    monster.push({ typ, x: p.x, y: p.y, dx: 0, dy: 0, tempo: slumpTempo(typ), raknare: 0, arg: 0, laddar: 0,
+      vila: typ === "teleportor" || typ === "korsskytt" ? Math.floor(Math.random() * 120) : 0,
+    });
   }
 }
 
@@ -267,6 +282,17 @@ function avstandFranSpelare(maxSteg) {
     }
   }
   return avstand;
+}
+
+// En ruta 3–8 steg från spelaren som teleportören hoppar till.
+function teleportMal() {
+  const val = [];
+  for (const [nyckel, d] of avstandFranSpelare(8)) {
+    const x = nyckel % kolumner;
+    const y = Math.floor(nyckel / kolumner);
+    if (d >= 3 && !arGron(x, y)) val.push({ x, y });
+  }
+  return val.length ? val[Math.floor(Math.random() * val.length)] : null;
 }
 
 // Start- och målrutan är gröna och monster får inte gå in på dem.
@@ -328,6 +354,15 @@ function skuggaForm(cx, cy, r) {
 function ritaMonster(m) {
   const cx = offsetX + (m.x + 0.5) * ruta;
   const cy = offsetY + (m.y + 0.5) * ruta;
+  if (m.typ === "teleportor" && m.laddar > 0) {
+    ctx.strokeStyle = "#3dffc0";
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() / 60);
+    ctx.beginPath();
+    ctx.arc(offsetX + (m.mx + 0.5) * ruta, offsetY + (m.my + 0.5) * ruta, ruta * 0.38, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
   const farg = m.laddar > 0 ? "#ffe14a" : m.arg > 0 ? RODA : MONSTERTYPER[m.typ].farg;
   ctx.globalAlpha = m.typ === "spok" ? 0.8 : 1;
   ctx.shadowColor = farg;
@@ -342,6 +377,16 @@ function ritaMonster(m) {
     ctx.lineTo(cx + r, cy + r * 0.8);
     ctx.lineTo(cx - r, cy + r * 0.8);
     ctx.closePath();
+  } else if (m.typ === "teleportor") {
+    const r = ruta * 0.42;
+    for (let i = 0; i < 6; i++) {
+      ctx.lineTo(cx + r * Math.cos((i * Math.PI) / 3), cy + r * Math.sin((i * Math.PI) / 3));
+    }
+    ctx.closePath();
+  } else if (m.typ === "korsskytt") {
+    const r = ruta * 0.42;
+    ctx.rect(cx - r * 0.35, cy - r, r * 0.7, r * 2);
+    ctx.rect(cx - r, cy - r * 0.35, r * 2, r * 0.7);
   } else if (m.typ === "spok") {
     const r = ruta * 0.4;
     ctx.arc(cx, cy - r * 0.15, r, Math.PI, 0);
@@ -919,11 +964,50 @@ function rita() {
         // Blir arg 1,5 s vid siktlinje och vilar sedan 1,5 s så man hinner undan.
         if (m.arg > 0) {
           m.arg--;
-          if (m.arg === 0) m.vila = 90;
+          if (m.arg === 0) m.vila = Math.max(40, 90 - Math.floor(niva / 2));
         } else if (m.vila > 0) {
           m.vila--;
         } else if (harSiktlinje(m)) {
-          m.arg = 90;
+          m.arg = Math.min(150, 90 + niva);
+        }
+      }
+      if (m.typ === "teleportor") {
+        if (m.laddar > 0) {
+          m.laddar--;
+          if (m.laddar === 0) {
+            m.x = m.mx;
+            m.y = m.my;
+            kollaMonster();
+            m.vila = Math.max(90, 180 - niva);
+          }
+        } else if (m.vila > 0) {
+          m.vila--;
+        } else {
+          const p = teleportMal();
+          if (p) {
+            m.mx = p.x;
+            m.my = p.y;
+            m.laddar = 60;
+          }
+        }
+        continue;
+      }
+      if (m.typ === "korsskytt") {
+        if (m.laddar > 0) {
+          m.laddar--;
+          if (m.laddar === 0) {
+            for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+              skott.push({ x: m.x, y: m.y, dx, dy, raknare: 0 });
+            }
+            m.vila = Math.max(70, 150 - niva);
+          }
+          continue;
+        }
+        if (m.vila > 0) {
+          m.vila--;
+        } else {
+          m.laddar = 40;
+          continue;
         }
       }
       if (m.typ === "skytt") {
@@ -932,14 +1016,14 @@ function rita() {
           m.laddar--;
           if (m.laddar === 0) {
             skott.push({ x: m.x, y: m.y, dx: m.sdx, dy: m.sdy, raknare: 0 });
-            m.vila = 100;
+            m.vila = Math.max(40, 100 - niva);
           }
           continue;
         }
         if (m.vila > 0) {
           m.vila--;
         } else if (harSiktlinje(m)) {
-          m.laddar = 35;
+          m.laddar = Math.max(22, 35 - Math.floor(niva / 8));
           m.sdx = Math.sign(spelare.x - m.x);
           m.sdy = Math.sign(spelare.y - m.y);
           continue;
@@ -954,7 +1038,7 @@ function rita() {
     }
     for (const s of skott) {
       s.raknare++;
-      if (s.raknare >= 6) {
+      if (s.raknare >= Math.max(3, 6 - Math.floor(niva / 30))) {
         s.raknare = 0;
         s.x += s.dx;
         s.y += s.dy;
