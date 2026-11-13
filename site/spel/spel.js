@@ -27,6 +27,8 @@ const SPELARE = "#2ad4ff";
 const extraVagar = () => Math.max(0.15, 0.5 - 0.004 * niva);
 const brunaVaggar = () => Math.max(0.1, 0.3 - 0.002 * niva);
 const grundNiva = () => Math.min(niva, MAX_STORLEKSNIVA);
+// Monstren är 50 % långsammare på nivå 1 och blir jämnt snabbare tills de har full fart på nivå 25.
+const tidigFaktor = () => 1 + 0.5 * Math.max(0, 1 - niva / 25);
 
 let niva = 0;
 let karta, kolumner, rader, ruta, offsetX, offsetY;
@@ -237,7 +239,7 @@ function slumpTempo(typ) {
   const faktor = 0.7 + Math.random() * 0.7;
   // Efter nivå 10 blir monstren långsamt snabbare, högst 40 %.
   const sent = Math.min(0.4, Math.max(0, niva - MAX_STORLEKSNIVA) * 0.005);
-  return Math.max(5, Math.round(MONSTERTYPER[typ].tempo() * faktor * (1 - sent)));
+  return Math.max(5, Math.round(MONSTERTYPER[typ].tempo() * faktor * (1 - sent) * tidigFaktor()));
 }
 
 // Placerar monster på slumpade gångar en bit från start och mål.
@@ -758,7 +760,7 @@ function ritaNivaval() {
   ctx.fillStyle = "#888";
   ctx.font = "14px system-ui, sans-serif";
   ctx.textAlign = "left";
-  ctx.fillText("Klicka eller pilar + mellanslag   Esc: tillbaka", 250, 38);
+  ctx.fillText("Klicka eller pilar + mellanslag   Esc: tillbaka", 230, 38);
 
   const totalt = framsteg.stjarnor.reduce((summa, s) => summa + s, 0);
   ctx.fillStyle = "#ffd23a";
@@ -767,7 +769,7 @@ function ritaNivaval() {
   ctx.font = "14px system-ui, sans-serif";
   ctx.textAlign = "right";
   ctx.fillText(
-    `Rekord: ${framsteg.bastaSerie}   Max: ${framsteg.rekord}/${MAXPOANG}   Stjärnor: ${totalt}/${ANTAL_NIVAER * 3}`,
+    `Poängstreak: ${framsteg.bastaSerie}   Max: ${framsteg.rekord}/${MAXPOANG}   Stjärnor: ${totalt}/${ANTAL_NIVAER * 3}`,
     w - 40,
     38
   );
@@ -842,7 +844,7 @@ function rita() {
   ctx.textAlign = "right";
   ctx.font = "14px system-ui, sans-serif";
   ctx.fillText(
-    `Poäng: ${poang}/${maxPoangNiva(niva)}   Serie: ${serie}   Rekord: ${framsteg.bastaSerie}   Max: ${framsteg.rekord}/${MAXPOANG}   Stjärnor: ${stjarnor}/3`,
+    `Poäng: ${poang}/${maxPoangNiva(niva)}   Serie: ${serie}   Poängstreak: ${framsteg.bastaSerie}   Max: ${framsteg.rekord}/${MAXPOANG}   Stjärnor: ${stjarnor}/3`,
     canvas.width - 10,
     19
   );
@@ -960,7 +962,7 @@ function rita() {
     ctx.fillText("Tryck mellanslag för att försöka igen", canvas.width / 2, canvas.height / 2 + 30);
     ctx.fillStyle = "#ffd23a";
     ctx.fillText(
-      `Din serie: ${senasteSerie} poäng   Rekord: ${framsteg.bastaSerie}`,
+      `Din serie: ${senasteSerie} poäng   Poängstreak: ${framsteg.bastaSerie}`,
       canvas.width / 2,
       canvas.height / 2 + 60
     );
@@ -1058,7 +1060,7 @@ function rita() {
         }
       }
       m.raknare++;
-      if (m.raknare >= (m.arg > 0 ? typ.argTempo : m.tempo)) {
+      if (m.raknare >= (m.arg > 0 ? typ.argTempo * tidigFaktor() : m.tempo)) {
         m.raknare = 0;
         flyttaMonster(m);
         kollaMonster();
